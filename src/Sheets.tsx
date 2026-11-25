@@ -105,6 +105,11 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose, onDe
       nextJob = applyMeasurement(j, room.id, wall, inches, setScale);
       return nextJob;
     });
+    try {
+      navigator.vibrate?.(8);
+    } catch {
+      /* not on this phone */
+    }
     setTxt('');
     const nx = nextJob ? nextUnverified(nextJob) : null;
     if (nx) onSelectWall(nx.room, nx.wall);
@@ -245,7 +250,7 @@ function addOpening(job: Job, room: Room, wall: number, type: OpeningType, commi
 }
 
 // ---------------- Room sheet ----------------
-export function RoomSheet({ job, room, commit, onMeasure, onClose, onDelete }: { job: Job; room: Room; commit: Commit; onMeasure: () => void; onClose: () => void; onDelete: () => void }) {
+export function RoomSheet({ job, room, commit, onMeasure, onClose, onDelete, onCloseRun }: { job: Job; room: Room; commit: Commit; onMeasure: () => void; onClose: () => void; onDelete: () => void; onCloseRun: () => void }) {
   const n = wallCount(room);
   let verified = 0,
     perim = 0;
@@ -253,68 +258,67 @@ export function RoomSheet({ job, room, commit, onMeasure, onClose, onDelete }: {
     if (isVerified(room, i)) verified++;
     perim += wallLenIn(job, room, i);
   }
-  const toggle = (k: 'base' | 'shoe' | 'crown') => commit((j) => updRoom(j, room.id, (r) => ({ ...r, [k]: !r[k] })));
+  const upd = (f: (r: Room) => Room) => commit((j) => updRoom(j, room.id, f));
+  const tog = (on: boolean, label: string, flip: () => void) => (
+    <button className={`chip sm ${on ? 'on' : ''}`} onClick={flip} aria-pressed={on}>
+      {on && <Check size={14} />} {label}
+    </button>
+  );
+  const floor = room.floor ?? 'none';
   return (
-    <div className="sheet" role="region" aria-label={`Room: ${room.name}`}>
-      <div className="sheet-head">
-        <input className="name-input" maxLength={60} value={room.name} onChange={(e) => commit((j) => updRoom(j, room.id, (r) => ({ ...r, name: e.target.value })))} aria-label="Room name" />
-        <button className="icon-btn close" onClick={onClose} aria-label="Close">
-          <X size={20} />
+    <div className="tapebar room-bar" role="region" aria-label={`Room: ${room.name}`}>
+      <div className="tb-head">
+        <div className="tb-title">
+          <input className="tb-name" maxLength={60} value={room.name} onChange={(e) => upd((r) => ({ ...r, name: e.target.value }))} aria-label="Room name" />
+          <span className="tb-where">
+            {fmtFtIn(perim)} {room.closed ? 'around' : 'of wall'}, {verified} of {n} measured
+          </span>
+        </div>
+        <button className="tb-nav del" onClick={onDelete} aria-label={room.closed ? 'Delete room' : 'Delete wall run'} title={room.closed ? 'Delete room' : 'Delete wall run'}>
+          <Trash2 size={19} />
+        </button>
+        <button className="tb-nav close" onClick={onClose} aria-label="Close">
+          <X size={22} />
         </button>
       </div>
-      <div className="stats">
-        <div>
-          <b>{fmtFtIn(perim)}</b>
-          <span>{room.closed ? 'around the room' : 'total run'}</span>
-        </div>
-        <div>
-          <b>
-            {verified}/{n}
-          </b>
-          <span>walls measured</span>
-        </div>
-        <div>
-          <b>{job.openings.filter((o) => o.room === room.id).length}</b>
-          <span>doors and windows</span>
+      <div className="tb-row">
+        <span className="tb-lab">Trim</span>
+        <div className="tb-chips">
+          {tog(room.base, 'Baseboard', () => upd((r) => ({ ...r, base: !r.base })))}
+          {tog(room.shoe, 'Shoe', () => upd((r) => ({ ...r, shoe: !r.shoe })))}
+          {tog(room.crown, 'Crown', () => upd((r) => ({ ...r, crown: !r.crown })))}
         </div>
       </div>
-      <div className="field-label">Trim</div>
-      <div className="seg3">
-        <button className={room.base ? 'on' : ''} onClick={() => toggle('base')} aria-pressed={room.base}>
-          {room.base && <Check size={15} />} Baseboard
-        </button>
-        <button className={room.shoe ? 'on' : ''} onClick={() => toggle('shoe')} aria-pressed={room.shoe}>
-          {room.shoe && <Check size={15} />} Shoe
-        </button>
-        <button className={room.crown ? 'on' : ''} onClick={() => toggle('crown')} aria-pressed={room.crown}>
-          {room.crown && <Check size={15} />} Crown
-        </button>
+      {room.closed && (
+        <div className="tb-row">
+          <span className="tb-lab">Floor</span>
+          <div className="tb-chips" role="radiogroup" aria-label="New floor">
+            {(['none', 'lvp', 'tile'] as FloorType[]).map((f) => (
+              <button key={f} role="radio" aria-checked={floor === f} className={`chip sm ${floor === f ? 'on' : ''}`} onClick={() => upd((r) => ({ ...r, floor: f }))}>
+                {f === 'none' ? 'None' : f === 'lvp' ? 'LVP' : 'Tile'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="tb-row">
+        <span className="tb-lab">Paint</span>
+        <div className="tb-chips">
+          {tog(!!room.paintWalls, 'Walls', () => upd((r) => ({ ...r, paintWalls: !r.paintWalls })))}
+          {room.closed && tog(!!room.paintCeiling, 'Ceiling', () => upd((r) => ({ ...r, paintCeiling: !r.paintCeiling })))}
+        </div>
       </div>
-      <div className="field-label">New floor</div>
-      <div className="seg3">
-        {(['none', 'lvp', 'tile'] as FloorType[]).map((f) => (
-          <button key={f} className={(room.floor ?? 'none') === f ? 'on' : ''} onClick={() => commit((j) => updRoom(j, room.id, (r) => ({ ...r, floor: f })))} aria-pressed={(room.floor ?? 'none') === f}>
-            {f === 'none' ? 'None' : f === 'lvp' ? 'LVP' : 'Tile'}
+      <div className="tb-actions">
+        {!room.closed && room.pts.length >= 3 && (
+          <button className="tb-btn" onClick={onCloseRun}>
+            Close into a room
           </button>
-        ))}
-      </div>
-      <div className="field-label">Paint</div>
-      <div className="seg3 two">
-        <button className={room.paintWalls ? 'on' : ''} onClick={() => commit((j) => updRoom(j, room.id, (r) => ({ ...r, paintWalls: !r.paintWalls })))} aria-pressed={!!room.paintWalls}>
-          {room.paintWalls && <Check size={15} />} Walls
-        </button>
-        <button className={room.paintCeiling ? 'on' : ''} onClick={() => commit((j) => updRoom(j, room.id, (r) => ({ ...r, paintCeiling: !r.paintCeiling })))} aria-pressed={!!room.paintCeiling}>
-          {room.paintCeiling && <Check size={15} />} Ceiling
+        )}
+        <button className="tb-go" onClick={onMeasure}>
+          <Ruler size={18} /> {verified < n ? `Measure ${n - verified === 1 ? 'the last wall' : `${n - verified} walls`}` : 'Review walls'}
         </button>
       </div>
-      <div className="row gap">
-        <button className="btn danger" onClick={onDelete} aria-label="Delete room">
-          <Trash2 size={18} />
-        </button>
-        <button className="btn primary grow" onClick={onMeasure}>
-          <Ruler size={18} /> {verified < n ? 'Measure walls' : 'Review walls'}
-        </button>
-      </div>
+      {room.closed && <div className="tb-note">Drag inside the room to move it.</div>}
     </div>
   );
 }
@@ -324,95 +328,113 @@ const DOOR_W = [24, 28, 30, 32, 36];
 const WIN_W = [24, 30, 36, 48, 60, 72];
 const WIN_H = [36, 48, 60];
 
-export function OpeningSheet({ job, o, commit, onClose }: { job: Job; o: Opening; commit: Commit; onClose: () => void }) {
+export function OpeningSheet({ job, o, commit, onClose, onDelete }: { job: Job; o: Opening; commit: Commit; onClose: () => void; onDelete: () => void }) {
   const set = (patch: Partial<Opening>) => commit((j) => ({ ...j, openings: j.openings.map((x) => (x.id === o.id ? { ...x, ...patch } : x)) }));
   const room = job.rooms.find((r) => r.id === o.room);
   const widths = o.type === 'window' ? WIN_W : DOOR_W;
-  const [wTxt, setWTxt] = useState(String(o.widthIn));
-  const [hTxt, setHTxt] = useState(String(o.heightIn));
-  useEffect(() => {
-    setWTxt(String(o.widthIn));
-    setHTxt(String(o.heightIn));
-  }, [o.id, o.widthIn, o.heightIn]);
+  const heights = o.type === 'window' ? WIN_H : [80, 84, 96];
   const label = o.type === 'door' ? 'Door' : o.type === 'window' ? 'Window' : 'Cased opening';
+  const num = (v: number, on: (n: number) => void, aria: string, list: number[]) => <NumBox key={aria + o.id} value={v} on={on} aria={aria} custom={!list.includes(v)} />;
   return (
-    <div className="sheet" role="region" aria-label={label}>
-      <div className="sheet-head">
-        <div className="sheet-title">
-          <div className="eyebrow">
+    <div className="tapebar open-bar" role="region" aria-label={label}>
+      <div className="tb-head">
+        <div className="tb-title">
+          <span className="tb-where">
             {room?.name}, wall {o.wall + 1}
-          </div>
-          <div className="h2">{label}</div>
+          </span>
+          <span className="tb-big">
+            {label} {o.widthIn}" x {o.heightIn}"
+          </span>
         </div>
-        <button className="icon-btn close" onClick={onClose} aria-label="Close">
-          <X size={20} />
+        <button className="tb-nav del" onClick={onDelete} aria-label={`Delete this ${label.toLowerCase()}`} title="Delete">
+          <Trash2 size={19} />
+        </button>
+        <button className="tb-nav close" onClick={onClose} aria-label="Close">
+          <X size={22} />
         </button>
       </div>
-      <div className="seg3">
-        {(['door', 'window', 'opening'] as OpeningType[]).map((t) => (
-          <button key={t} className={o.type === t ? 'on' : ''} onClick={() => set({ type: t, bothSides: t !== 'window', heightIn: t === 'window' ? job.settings.windowHeightIn : job.settings.doorHeightIn, widthIn: t === 'window' ? job.settings.windowWidthIn : job.settings.doorWidthIn })}>
-            {t === 'door' ? 'Door' : t === 'window' ? 'Window' : 'Opening'}
-          </button>
-        ))}
+      <div className="tb-row">
+        <span className="tb-lab">Type</span>
+        <div className="tb-chips" role="radiogroup" aria-label="Type">
+          {(['door', 'window', 'opening'] as OpeningType[]).map((t) => (
+            <button
+              key={t}
+              role="radio"
+              aria-checked={o.type === t}
+              className={`chip sm ${o.type === t ? 'on' : ''}`}
+              onClick={() => o.type !== t && set({ type: t, bothSides: t !== 'window', heightIn: t === 'window' ? job.settings.windowHeightIn : job.settings.doorHeightIn, widthIn: t === 'window' ? job.settings.windowWidthIn : job.settings.doorWidthIn, newDoor: t === 'door' ? o.newDoor : false })}
+            >
+              {t === 'door' ? 'Door' : t === 'window' ? 'Window' : 'Opening'}
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="field-label">{o.type === 'door' ? 'Door slab width, inches' : 'Width, inches'}</div>
-      <div className="chips tight">
-        {widths.map((wd) => (
-          <button key={wd} className={`chip ${o.widthIn === wd ? 'on' : ''}`} onClick={() => set({ widthIn: wd })}>
-            {wd}"
-          </button>
-        ))}
-        <input
-          className="num-input"
-          inputMode="decimal"
-          value={wTxt}
-          onChange={(e) => {
-            setWTxt(e.target.value);
-            const v = parseFloat(e.target.value);
-            if (v > 0) set({ widthIn: v });
-          }}
-          aria-label="Width in inches"
-        />
+      <div className="tb-row">
+        <span className="tb-lab">Wide</span>
+        <div className="tb-chips" role="radiogroup" aria-label={o.type === 'door' ? 'Door slab width' : 'Width'}>
+          {widths.map((wd) => (
+            <button key={wd} role="radio" aria-checked={o.widthIn === wd} className={`chip sm ${o.widthIn === wd ? 'on' : ''}`} onClick={() => set({ widthIn: wd })}>
+              {wd}"
+            </button>
+          ))}
+          {num(o.widthIn, (v) => set({ widthIn: v }), 'Width in inches', widths)}
+        </div>
       </div>
-      <div className="field-label">Height, inches</div>
-      <div className="chips tight">
-        {(o.type === 'window' ? WIN_H : [80, 84, 96]).map((h) => (
-          <button key={h} className={`chip ${o.heightIn === h ? 'on' : ''}`} onClick={() => set({ heightIn: h })}>
-            {h}"
-          </button>
-        ))}
-        <input
-          className="num-input"
-          inputMode="decimal"
-          value={hTxt}
-          onChange={(e) => {
-            setHTxt(e.target.value);
-            const v = parseFloat(e.target.value);
-            if (v > 0) set({ heightIn: v });
-          }}
-          aria-label="Height in inches"
-        />
+      <div className="tb-row">
+        <span className="tb-lab">High</span>
+        <div className="tb-chips" role="radiogroup" aria-label="Height">
+          {heights.map((h) => (
+            <button key={h} role="radio" aria-checked={o.heightIn === h} className={`chip sm ${o.heightIn === h ? 'on' : ''}`} onClick={() => set({ heightIn: h })}>
+              {h}"
+            </button>
+          ))}
+          {num(o.heightIn, (v) => set({ heightIn: v }), 'Height in inches', heights)}
+        </div>
       </div>
-      {o.type === 'door' && (
-        <button className={`btn full toggle-row ${o.newDoor ? 'on' : ''}`} onClick={() => set({ newDoor: !o.newDoor })} aria-pressed={!!o.newDoor}>
-          <span className={`box ${o.newDoor ? 'on' : ''}`}>{o.newDoor && <Check size={14} />}</span> Buying a new prehung door here
-        </button>
+      {o.type !== 'window' && (
+        <div className="tb-row">
+          <span className="tb-lab">Trim</span>
+          <div className="tb-chips">
+            <button className={`chip sm ${o.bothSides ? 'on' : ''}`} onClick={() => set({ bothSides: !o.bothSides })} aria-pressed={o.bothSides}>
+              {o.bothSides && <Check size={14} />} Case both sides
+            </button>
+            {o.type === 'door' && (
+              <button className={`chip sm ${o.newDoor ? 'on' : ''}`} onClick={() => set({ newDoor: !o.newDoor })} aria-pressed={!!o.newDoor}>
+                {o.newDoor && <Check size={14} />} New prehung door
+              </button>
+            )}
+          </div>
+        </div>
       )}
-      <div className="row gap">
-        <button className="btn danger" onClick={() => { commit((j) => ({ ...j, openings: j.openings.filter((x) => x.id !== o.id) })); onClose(); }} aria-label="Delete">
-          <Trash2 size={18} />
-        </button>
-        {o.type !== 'window' && (
-          <button className={`btn grow ${o.bothSides ? 'on' : ''}`} onClick={() => set({ bothSides: !o.bothSides })}>
-            {o.bothSides ? <Check size={18} /> : null} Case both sides
-          </button>
-        )}
-        <button className="btn primary grow" onClick={onClose}>
-          Done
+      <div className="tb-actions">
+        <button className="tb-go" onClick={onClose}>
+          <Check size={18} /> Done
         </button>
       </div>
-      <div className="hint-small">Drag the blue dot on the plan to slide it along the wall.</div>
+      <div className="tb-note">Drag the blue dot on the plan to slide it along the wall.</div>
     </div>
+  );
+}
+
+/** a small typed box for a size that isn't on the chips */
+function NumBox({ value, on, aria, custom }: { value: number; on: (n: number) => void; aria: string; custom: boolean }) {
+  const [txt, setTxt] = useState(custom ? String(value) : '');
+  useEffect(() => {
+    setTxt(custom ? String(value) : '');
+  }, [value, custom]);
+  return (
+    <input
+      className={`tb-num ${custom ? 'on' : ''}`}
+      inputMode="decimal"
+      placeholder="Other"
+      value={txt}
+      onChange={(e) => {
+        setTxt(e.target.value);
+        const v = parseFloat(e.target.value);
+        if (v > 0 && v < 400) on(v);
+      }}
+      aria-label={aria}
+    />
   );
 }
 

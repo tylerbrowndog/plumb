@@ -22,7 +22,7 @@ import {
 } from './geometry';
 import { fmtFtIn } from './units';
 import { newRoom } from './store';
-import { moveWall, wallDragOffset } from './edit';
+import { alignWallOffset, moveRoom, moveWall, roomDragOffset, wallDragOffset } from './edit';
 
 export interface View {
   x: number;
@@ -51,7 +51,8 @@ type Gesture =
   | { type: 'pan'; s0: Pt; v0: View; moved: boolean; tap: Selection | 'clear' }
   | { type: 'vertex'; refs: { room: string; idx: number }[]; s0: Pt; moved: boolean; tap: Selection; base: Job }
   | { type: 'opening'; id: string; s0: Pt; moved: boolean }
-  | { type: 'wallmove'; room: string; wall: number; s0: Pt; w0: Pt; moved: boolean; base: Job }
+  | { type: 'wallmove'; room: string; wall: number; s0: Pt; w0: Pt; moved: boolean; base: Job; d: number }
+  | { type: 'roommove'; room: string; s0: Pt; w0: Pt; moved: boolean; base: Job }
   | { type: 'place'; s0: Pt; moved: boolean };
 
 const TAP = 8; // px
@@ -195,6 +196,13 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
     return best;
   };
 
+  /** sliding moves in whole inches, coarser when zoomed out so a finger can land on round numbers */
+  const slideStep = () => {
+    const ipu = job.inPerUnit || 1;
+    for (const inch of [1, 3, 6, 12, 24]) if ((inch / ipu) * view.k >= 7) return inch / ipu;
+    return 48 / ipu;
+  };
+
   // ---------- pointer handlers ----------
   const onDown = (e: React.PointerEvent) => {
     try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ignore */ }
@@ -212,7 +220,15 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
     if (sel?.kind === 'wall') {
       const h = hit(s);
       if (h && h.kind === 'wall' && h.room === sel.room && h.wall === sel.wall) {
-        g.current = { type: 'wallmove', room: sel.room, wall: sel.wall, s0: s, w0: w, moved: false, base: job };
+        g.current = { type: 'wallmove', room: sel.room, wall: sel.wall, s0: s, w0: w, moved: false, base: job, d: 0 };
+        rerender();
+        return;
+      }
+    }
+    if (sel?.kind === 'room') {
+      const h = hit(s);
+      if (h && h.kind === 'room' && h.room === sel.room) {
+        g.current = { type: 'roommove', room: sel.room, s0: s, w0: w, moved: false, base: job };
         rerender();
         return;
       }
@@ -305,8 +321,15 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
       if (!gs.moved) return;
       const r = gs.base.rooms.find((x) => x.id === gs.room);
       if (!r) return;
-      const d = wallDragOffset(r, gs.wall, gs.w0, toWorld(s));
+      const d = alignWallOffset(gs.base, r, gs.wall, wallDragOffset(r, gs.wall, gs.w0, toWorld(s), slideStep()), 10 / view.k);
+      gs.d = d;
       setDragJob(d ? moveWall(gs.base, gs.room, gs.wall, d) : gs.base);
+    } else if (gs.type === 'roommove') {
+      gs.moved ||= moved;
+      if (!gs.moved) return;
+      const w = toWorld(s);
+      const o = roomDragOffset(gs.base, gs.room, { x: w.x - gs.w0.x, y: w.y - gs.w0.y }, 14 / view.k, slideStep());
+      setDragJob(moveRoom(gs.base, gs.room, o.x, o.y));
     } else if (gs.type === 'opening') {
       gs.moved ||= moved;
       if (!gs.moved) return;
@@ -389,7 +412,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
         commit(() => dj);
       } else if (!gs.moved) setSel(gs.tap);
       setDragJob(null);
-    } else if (gs.type === 'wallmove') {
+    } else if (gs.type === 'wallmove' || gs.type === 'roommove') {
       if (gs.moved && dragJob && dragJob !== gs.base) {
         const dj = dragJob;
         commit(() => dj);
@@ -617,6 +640,30 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
             <g transform={`translate(${sx} ${sy}) rotate(${ang})`} pointerEvents="none" className="wall-grip">
               <circle r={12} fill="var(--handle)" stroke="var(--accent)" strokeWidth={2} />
               <path d="M -7 0 L 7 0 M -7 0 L -3.5 -3.5 M -7 0 L -3.5 3.5 M 7 0 L 3.5 -3.5 M 7 0 L 3.5 3.5" stroke="var(--accent)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </g>
+          );
+        })()}
+
+      {/* how far the line has slid */}
+      {gs?.type === 'wallmove' &&
+        gs.moved &&
+        Math.abs(gs.d) > 1e-6 &&
+        (() => {
+          const r = shown.rooms.find((x) => x.id === gs.room);
+          if (!r) return null;
+          const [a, b] = wallEnds(r, gs.wall);
+          const m = lerp(a, b, 0.5);
+          const nO = outwardNormal(r, a, b);
+          const sx = m.x * k + view.x - nO.x * 44,
+            sy = m.y * k + view.y - nO.y * 44;
+          const t = fmtFtIn(Math.abs(gs.d) * job.inPerUnit);
+          const wpx = t.length * 8.5 + 20;
+          return (
+            <g transform={`translate(${sx} ${sy})`} pointerEvents="none" className="slide-tag">
+              <rect x={-wpx / 2} y={-14} width={wpx} height={28} rx={8} fill="var(--case)" />
+              <text textAnchor="middle" dy="5" fill="var(--tape)" className="slide-tag-t">
+                {t}
+              </text>
             </g>
           );
         })()}

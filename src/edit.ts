@@ -172,3 +172,63 @@ function clean(w: Wall | undefined): Wall {
   }
   return w;
 }
+
+/** slide a whole room; its doors and windows ride along */
+export function moveRoom(job: Job, roomId: string, dx: number, dy: number): Job {
+  if (!dx && !dy) return job;
+  return {
+    ...job,
+    rooms: job.rooms.map((r) => (r.id === roomId ? { ...r, pts: r.pts.map((p) => ({ x: Math.round((p.x + dx) * 1000) / 1000, y: Math.round((p.y + dy) * 1000) / 1000 })) } : r)),
+  };
+}
+
+/** a room's drag offset, snapped to the grid, or onto another room's corner when one is close */
+export function roomDragOffset(job: Job, roomId: string, raw: Pt, tol: number, grid?: number): Pt {
+  const r = job.rooms.find((x) => x.id === roomId);
+  if (!r) return raw;
+  let best: Pt | null = null;
+  let bd = tol;
+  for (const o of job.rooms) {
+    if (o.id === roomId) continue;
+    for (const q of o.pts)
+      for (const p of r.pts) {
+        const d = Math.hypot(p.x + raw.x - q.x, p.y + raw.y - q.y);
+        if (d < bd) {
+          bd = d;
+          best = { x: q.x - p.x, y: q.y - p.y };
+        }
+      }
+  }
+  return best ?? { x: snapN(raw.x, grid), y: snapN(raw.y, grid) };
+}
+
+/** close an open run of walls into a room */
+export function closeRun(job: Job, roomId: string): Job {
+  return {
+    ...job,
+    rooms: job.rooms.map((r) => (r.id === roomId && !r.closed && r.pts.length >= 3 ? { ...r, closed: true, walls: [...r.walls.slice(0, r.pts.length - 1), {}] } : r)),
+  };
+}
+
+/** line a slid wall up with other corners when it comes close (axis-aligned walls only) */
+export function alignWallOffset(job: Job, r: Room, i: number, d: number, tol: number): number {
+  const [a, b] = wallEnds(r, i);
+  const L = dist(a, b) || 1;
+  const n = { x: -(b.y - a.y) / L, y: (b.x - a.x) / L };
+  const axis = Math.abs(n.x) > 0.999 ? 'x' : Math.abs(n.y) > 0.999 ? 'y' : null;
+  if (!axis) return d;
+  const nn = axis === 'x' ? n.x : n.y;
+  const cur = (axis === 'x' ? a.x : a.y) + d * nn;
+  let best = d;
+  let bd = tol;
+  for (const o of job.rooms)
+    for (const q of o.pts) {
+      if (same(q, a) || same(q, b)) continue;
+      const v = axis === 'x' ? q.x : q.y;
+      if (Math.abs(v - cur) < bd) {
+        bd = Math.abs(v - cur);
+        best = (v - (axis === 'x' ? a.x : a.y)) / nn;
+      }
+    }
+  return best;
+}

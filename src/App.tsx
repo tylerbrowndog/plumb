@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MousePointer2, PenLine, SquarePlus, DoorOpen, AppWindow, Undo2, Redo2, Maximize, Menu, ChevronDown, CircleHelp, Trash2, Settings2 } from 'lucide-react';
-import { canDeleteCorner, deleteCorner, deleteWall, deleteWallEffect, splitWall } from './edit';
+import { canDeleteCorner, closeRun, deleteCorner, deleteWall, deleteWallEffect, splitWall } from './edit';
+
+/** a short tick under the thumb, where the phone allows it */
+const buzz = (ms = 10) => {
+  try {
+    navigator.vibrate?.(ms);
+  } catch {
+    /* not on this phone */
+  }
+};
 import type { Job, Selection, Tool } from './types';
 import PlanCanvas, { type View } from './PlanCanvas';
 import { AddRoomSheet, OpeningSheet, RoomSheet, WallSheet } from './Sheets';
@@ -63,6 +72,7 @@ export default function App() {
   const toast = useCallback((s: string, undoable = false) => {
     setToastMsg(s);
     setToastUndo(undoable);
+    if (undoable) buzz(14);
     window.clearTimeout((toast as unknown as { t?: number }).t);
     (toast as unknown as { t?: number }).t = window.setTimeout(() => setToastMsg(null), undoable ? 4500 : 1800);
   }, []);
@@ -121,8 +131,39 @@ export default function App() {
     bump((n) => n + 1);
   };
 
+  const delRoom = (id: string) => {
+    const r = job.rooms.find((x) => x.id === id);
+    if (!r) return;
+    commit((j) => ({ ...j, rooms: j.rooms.filter((x) => x.id !== id), openings: j.openings.filter((o) => o.room !== id) }));
+    setSel(null);
+    toast(`${r.name} deleted.`, true);
+  };
+  const delOpening = (id: string) => {
+    const o = job.openings.find((x) => x.id === id);
+    if (!o) return;
+    commit((j) => ({ ...j, openings: j.openings.filter((x) => x.id !== id) }));
+    setSel(null);
+    toast(`${o.type === 'door' ? 'Door' : o.type === 'window' ? 'Window' : 'Opening'} deleted.`, true);
+  };
+  const delCorner = (room: string, idx: number) => {
+    const r = job.rooms.find((x) => x.id === room);
+    if (!r || !canDeleteCorner(r)) return;
+    commit((j) => deleteCorner(j, room, idx));
+    setSel(null);
+    toast('Corner deleted. The lines on each side are one line now.', true);
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const tg = e.target as HTMLElement | null;
+      const typing = !!tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.isContentEditable);
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && sel && sel.kind !== 'wall') {
+        e.preventDefault();
+        if (sel.kind === 'corner') delCorner(sel.room, sel.idx);
+        else if (sel.kind === 'opening') delOpening(sel.id);
+        else if (sel.kind === 'room') delRoom(sel.room);
+        return;
+      }
       if (e.key === 'Escape') {
         if (drawer) setDrawer(false);
         else if (adding) setAdding(false);
@@ -142,7 +183,7 @@ export default function App() {
   // ----- view helpers -----
   const RAIL = 72,
     RIGHT = 64;
-  const sheetH = sel ? (sel.kind === 'wall' ? 236 : sel.kind === 'room' ? Math.min(mainSize.h * 0.8, 440) : 340) : adding ? 236 : 70;
+  const sheetH = sel ? (sel.kind === 'wall' ? 236 : sel.kind === 'room' ? 270 : sel.kind === 'opening' ? 300 : 70) : adding ? 236 : 70;
   const fit = useCallback(
     (j: Job = jobRef.current) => {
       const b = bounds(j);
@@ -387,13 +428,7 @@ export default function App() {
                     className="bub-btn danger"
                     disabled={!ok}
                     title={ok ? 'Delete this corner' : 'A room needs at least three corners'}
-                    onClick={() => {
-                      const id = selRoom.id,
-                        idx = sel.idx;
-                      commit((j) => deleteCorner(j, id, idx));
-                      setSel(null);
-                      toast('Corner deleted. The lines on each side are one line now.', true);
-                    }}
+                    onClick={() => delCorner(selRoom.id, sel.idx)}
                   >
                     <Trash2 size={17} /> Delete corner
                   </button>
@@ -419,10 +454,11 @@ export default function App() {
                 setTool('select');
                 setSel({ kind: 'wall', room: selRoom.id, wall: w });
               }}
-              onDelete={() => {
+              onDelete={() => delRoom(selRoom.id)}
+              onCloseRun={() => {
                 const id = selRoom.id;
-                commit((j) => ({ ...j, rooms: j.rooms.filter((r) => r.id !== id), openings: j.openings.filter((o) => o.room !== id) }));
-                setSel(null);
+                commit((j) => closeRun(j, id));
+                toast('Closed into a room. The new wall needs a tape length.', true);
               }}
             />
           )}
@@ -437,7 +473,7 @@ export default function App() {
               onClose={() => setAdding(false)}
             />
           )}
-          {selOpening && <OpeningSheet job={job} o={selOpening} commit={commit} onClose={() => setSel(null)} />}
+          {selOpening && <OpeningSheet job={job} o={selOpening} commit={commit} onClose={() => setSel(null)} onDelete={() => delOpening(selOpening.id)} />}
         </div>
       ) : (
         <div className="main scroll">

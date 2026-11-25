@@ -1,5 +1,5 @@
 // Checks for line editing. Run: npx tsx e2e/edit.ts
-import { deleteCorner, deleteWall, moveWall, splitWall } from '../src/edit.ts';
+import { alignWallOffset, closeRun, deleteCorner, deleteWall, moveRoom, moveWall, roomDragOffset, splitWall } from '../src/edit.ts';
 import type { Job } from '../src/types.ts';
 
 let fails = 0;
@@ -79,6 +79,27 @@ const base = (): Job =>
   const r = j.rooms[0];
   ok(r.pts[1].x === 132 && r.pts[2].x === 132, 'right wall slides out');
   ok(r.walls[2].lengthIn === undefined && r.walls[0].lengthIn === 120, 'worked-out length clears, taped one stays');
+}
+// move a whole room
+{
+  const j = moveRoom(base(), 'r', 24, 12);
+  ok(j.rooms[0].pts[0].x === 24 && j.rooms[0].pts[2].y === 108, 'room slides as one piece');
+  ok(j.openings.length === 2 && j.rooms[0].walls[0].lengthIn === 120, 'doors, windows and tape lengths ride along');
+  const two = { ...base(), rooms: [...base().rooms, { ...base().rooms[0], id: 'r2', pts: [{ x: 200, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 96 }, { x: 200, y: 96 }] }] } as Job;
+  const o = roomDragOffset(two, 'r2', { x: -77, y: 1 }, 6);
+  ok(o.x === -80 && o.y === 0, 'a room snaps onto the corner of the room next to it');
+}
+// close an open run back into a room
+{
+  const open = deleteWall(base(), 'r', 0);
+  const j = closeRun(open, 'r');
+  ok(j.rooms[0].closed && j.rooms[0].walls.length === 4 && j.rooms[0].pts.length === 4, 'open run closes into a four-wall room');
+}
+// slide a wall until it lines up with another corner
+{
+  const two = { ...base(), rooms: [...base().rooms, { ...base().rooms[0], id: 'r2', pts: [{ x: 130, y: 200 }, { x: 200, y: 200 }, { x: 200, y: 300 }, { x: 130, y: 300 }] }] } as Job;
+  const d = alignWallOffset(two, two.rooms[0], 1, -8, 4);
+  ok(Math.abs(d - -10) < 1e-6, 'slid wall lines up with the other room');
 }
 console.log(fails ? `${fails} failed` : 'all good');
 process.exit(fails ? 1 : 0);

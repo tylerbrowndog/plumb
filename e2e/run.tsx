@@ -109,7 +109,7 @@ const wx = (nums[0] + nums[2]) / 2,
 log('tap world', wx, wy, 'screen', wx * kk + tx, wy * kk + ty);
 await ptr('pointerdown', wx * kk + tx, wy * kk + ty);
 await ptr('pointerup', wx * kk + tx, wy * kk + ty);
-log('after window tap sheet:', $('.h2')?.textContent);
+log('after window tap bar:', $('.open-bar .tb-big')?.textContent, '| rows:', $$('.open-bar .tb-lab').map((x) => x.textContent).join(','));
 await click(btn('Done'), 'done');
 await click($$('.tool').find((b) => b.textContent === 'Select'), 'select');
 await ptr('pointerdown', 430, 300);
@@ -152,11 +152,11 @@ await click(btn('Plan'), 'plan');
   const [, x2, y2, k2] = tr2.match(/translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)/)!.map(Number) as number[];
   await ptr('pointerdown', 60 * k2 + x2, 66 * k2 + y2);
   await ptr('pointerup', 60 * k2 + x2, 66 * k2 + y2);
-  log('room sheet:', ($('.name-input') as HTMLInputElement)?.value, '| labels:', $$('.sheet .field-label').map((x) => x.textContent).join(','));
-  await click($$('.sheet .seg3 button').find((b) => b.textContent === 'LVP'), 'lvp');
-  await click($$('.sheet .seg3 button').find((b) => b.textContent?.includes('Walls')), 'walls');
-  await click($$('.sheet .seg3 button').find((b) => b.textContent?.includes('Ceiling')), 'ceil');
-  await click($('.sheet .icon-btn.close'), 'close room');
+  log('room bar:', ($('.tb-name') as HTMLInputElement)?.value, '| rows:', $$('.room-bar .tb-lab').map((x) => x.textContent).join(','), '|', $('.room-bar .tb-where')?.textContent);
+  await click($$('.room-bar .chip').find((b) => b.textContent === 'LVP'), 'lvp');
+  await click($$('.room-bar .chip').find((b) => b.textContent?.includes('Walls')), 'walls');
+  await click($$('.room-bar .chip').find((b) => b.textContent?.includes('Ceiling')), 'ceil');
+  await click($('.room-bar .tb-nav.close'), 'close room');
   await click(btn('List'), 'list3');
   log('groups:', $$('.group-head').map((x) => x.textContent).join(','), '| facts:', $('.facts')?.textContent);
   log('forget count:', $$('.item.slim').length);
@@ -255,6 +255,73 @@ await stroke([[110, 200], [300, 200], [300, 360], [110, 360], [112, 205]]);
   await click($('.toast-undo'), 'undo from toast');
   rooms = await curRoom();
   log('undo brings it back: closed', rooms[0].closed, 'corners', rooms[0].pts.length);
+
+  // slide shows how far, while the finger is down
+  S = screenOf();
+  await tapAt(mid(rooms[0], 1));
+  {
+    S = screenOf();
+    const m = mid(rooms[0], 1);
+    await ptr('pointerdown', m.x, m.y);
+    for (let i = 1; i <= 4; i++) await ptr('pointermove', m.x + i * 10, m.y);
+    log('slide tag while dragging:', $('.slide-tag')?.textContent);
+    await ptr('pointerup', m.x + 40, m.y);
+  }
+  // move the whole room: tap inside to pick it, then drag inside it
+  rooms = await curRoom();
+  S = screenOf();
+  const cIn = () => {
+    const r = rooms[0];
+    const cx = r.pts.reduce((t: number, p: any) => t + p.x, 0) / r.pts.length,
+      cy = r.pts.reduce((t: number, p: any) => t + p.y, 0) / r.pts.length;
+    return S({ x: cx, y: cy + 20 });
+  };
+  await click($('.tapebar .tb-nav.close'), 'close bar');
+  await tapAt(cIn());
+  log('room bar open:', !!$('.room-bar'), '|', $('.room-bar .tb-note')?.textContent);
+  const p0 = JSON.stringify(rooms[0].pts[0]);
+  {
+    S = screenOf();
+    const c = cIn();
+    await ptr('pointerdown', c.x, c.y);
+    for (let i = 1; i <= 6; i++) await ptr('pointermove', c.x + i * 10, c.y + i * 4);
+    await ptr('pointerup', c.x + 60, c.y + 24);
+  }
+  rooms = await curRoom();
+  log('room moved:', p0, '->', JSON.stringify(rooms[0].pts[0]), '| measured lengths kept:', rooms[0].walls.filter((w: any) => w.lengthIn && !w.predicted).length);
+  // open a line, then close the run back into a room
+  S = screenOf();
+  await tapAt(mid(rooms[0], 0));
+  await click($('button[aria-label="Delete this line"]'), 'delete line');
+  rooms = await curRoom();
+  S = screenOf();
+  await tapAt(mid(rooms[0], 1));
+  await click($('.tapebar .tb-nav.close'), 'close bar');
+  S = screenOf();
+  const corner = S(rooms[0].pts[1]);
+  await tapAt(corner);
+  log('corner bubble:', $('.bubble')?.textContent);
+  await click($$('.bubble .bub-btn').find((b) => b.textContent?.includes('Room')), 'open run settings');
+  log('run bar:', $('.room-bar .tb-where')?.textContent, '| close button:', !!btn('Close into a room'));
+  await click(btn('Close into a room'), 'close into room');
+  rooms = await curRoom();
+  log('closed again:', rooms[0].closed, 'walls', rooms[0].walls.length, '| toast:', $('.toast span')?.textContent);
+  // Delete key removes a picked corner
+  S = screenOf();
+  await click($('.room-bar .tb-nav.close'), 'close room bar');
+  const before5 = rooms[0].pts.length;
+  S = screenOf();
+  await tapAt(S(rooms[0].pts[2]));
+  await act(async () => {
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+  });
+  rooms = await curRoom();
+  log('delete key on a corner:', before5, '->', rooms[0].pts.length);
+  await act(async () => {
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+  });
+  rooms = await curRoom();
+  log('ctrl z brings the corner back:', rooms[0].pts.length);
 }
 await click($('.job-btn'), 'drawer2');
 await click(btn('Erase all Plumb data'), 'wipe1');
