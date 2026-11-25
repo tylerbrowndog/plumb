@@ -107,7 +107,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
 
   // ---------- label layout ----------
   const labels = useMemo(() => {
-    const out: { room: string; wall: number; x: number; y: number; text: string; verified: boolean; predicted: boolean; w: number; noBase: boolean }[] = [];
+    const out: { room: string; wall: number; x: number; y: number; text: string; verified: boolean; predicted: boolean; w: number; noBase: boolean; rot: number }[] = [];
     for (const r of shown.rooms) {
       const n = wallCount(r);
       for (let i = 0; i < n; i++) {
@@ -116,11 +116,18 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
         if (dl * view.k < 18) continue;
         const nOut = outwardNormal(r, a, b);
         const m = lerp(a, b, 0.5);
-        const off = 17 / view.k;
         const len = wallLenIn(shown, r, i);
         const verified = isVerified(r, i);
         const text = (verified ? '' : '~') + fmtFtIn(len);
-        out.push({ room: r.id, wall: i, x: m.x + nOut.x * off, y: m.y + nOut.y * off, text, verified, predicted: !!r.walls[i]?.predicted, w: text.length * 7 + 16, noBase: !!r.walls[i]?.noBase });
+        const w = text.length * 7.3 + 18;
+        // tags run along their wall, like a drawing's dimensions, when the wall is long enough to hold one
+        let rot = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+        if (rot >= 90) rot -= 180;
+        if (rot < -90) rot += 180;
+        const along = dl * view.k > w + 10;
+        if (!along) rot = 0;
+        const off = (along ? 15 : 13 + Math.abs(nOut.x) * (w / 2 - 11)) / view.k;
+        out.push({ room: r.id, wall: i, x: m.x + nOut.x * off, y: m.y + nOut.y * off, text, verified, predicted: !!r.walls[i]?.predicted, w, noBase: !!r.walls[i]?.noBase, rot });
       }
     }
     return out;
@@ -497,7 +504,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           return (
             <g key={r.id}>
               {r.closed && <path d={d} fill={isSel ? 'var(--room-sel)' : 'var(--room)'} />}
-              <path d={d} fill="none" stroke={isSel ? 'var(--wall-sel)' : 'var(--wall)'} strokeWidth={3} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+              <path d={d} fill="none" stroke={isSel ? 'var(--wall-sel)' : 'var(--wall)'} strokeWidth={isSel ? 2.5 : 2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
               {r.walls.map((wl, i) =>
                 wl.noBase && i < wallCount(r) ? (
                   <line key={i} x1={wallEnds(r, i)[0].x} y1={wallEnds(r, i)[0].y} x2={wallEnds(r, i)[1].x} y2={wallEnds(r, i)[1].y} stroke="var(--nobase)" strokeWidth={3} strokeDasharray="2 5" vectorEffect="non-scaling-stroke" />
@@ -515,8 +522,8 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
             const [a, b] = wallEnds(r, sel.wall);
             return (
               <g>
-                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--accent)" strokeWidth={14} strokeOpacity={0.25} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--accent)" strokeWidth={4} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--accent)" strokeWidth={16} strokeOpacity={0.22} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--accent)" strokeWidth={3} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
               </g>
             );
           })()}
@@ -529,8 +536,8 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
             const [a, b] = wallEnds(r, hot.wall);
             return (
               <g>
-                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--tape)" strokeWidth={18} strokeOpacity={0.6} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--tape-edge)" strokeWidth={4} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--tape)" strokeWidth={18} strokeOpacity={0.35} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--tape)" strokeWidth={3} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
               </g>
             );
           })()}
@@ -596,7 +603,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
                   </g>
                 );
               return (
-                <circle key={r.id + i} cx={p.x} cy={p.y} r={(isSel ? 6.5 : 4) / k} fill={isSel ? 'var(--handle)' : 'var(--canvas)'} stroke={isSel ? 'var(--accent)' : 'var(--wall-dim)'} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                <circle key={r.id + i} cx={p.x} cy={p.y} r={(isSel ? 6 : 3.5) / k} fill={isSel ? 'var(--handle)' : 'var(--wall)'} stroke={isSel ? 'var(--accent)' : 'none'} strokeWidth={isSel ? 2.5 : 0} vectorEffect="non-scaling-stroke" />
               );
             }),
           )}
@@ -608,16 +615,18 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           sy = l.y * k + view.y;
         const isSel = sel?.kind === 'wall' && sel.room === l.room && sel.wall === l.wall;
         return (
-          <g key={l.room + l.wall} transform={`translate(${sx} ${sy})`}>
-            {l.verified || isSel ? (
-              <>
-                <rect x={-l.w / 2} y={-11} width={l.w} height={22} rx={2.5} fill={isSel ? 'var(--chalk)' : 'var(--tape)'} stroke={isSel ? 'none' : 'var(--tape-edge)'} strokeWidth={l.predicted ? 1.5 : 1} strokeDasharray={l.predicted && !isSel ? '4 2' : undefined} />
-                {!isSel && <rect x={-l.w / 2 + 2} y={-11} width={l.w - 4} height={22} fill="url(#tapeTicks)" />}
-              </>
-            ) : (
-              <rect x={-l.w / 2} y={-11} width={l.w} height={22} rx={2.5} fill="var(--chip)" stroke="var(--pencil)" strokeWidth={1.25} strokeDasharray="3 2.5" />
-            )}
-            <text textAnchor="middle" dy="4.5" className="lbl" fill={isSel ? '#fff' : l.verified ? 'var(--tape-ink)' : 'var(--pencil)'}>
+          <g key={l.room + l.wall} transform={`translate(${sx} ${sy}) rotate(${l.rot})`}>
+            <rect
+              x={-l.w / 2}
+              y={-11}
+              width={l.w}
+              height={22}
+              rx={11}
+              fill={isSel ? 'var(--chalk)' : l.verified && !l.predicted ? 'var(--tape)' : 'var(--chip)'}
+              stroke={isSel || (l.verified && !l.predicted) ? 'none' : l.predicted ? 'var(--tape)' : 'rgba(255,255,255,0.16)'}
+              strokeWidth={1}
+            />
+            <text textAnchor="middle" dy="4.4" className="lbl" fill={isSel ? '#fff' : l.verified && !l.predicted ? 'var(--tape-ink)' : l.predicted ? 'var(--tape)' : 'var(--pencil)'}>
               {l.text}
             </text>
           </g>
@@ -633,13 +642,13 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           if (dist(a, b) * k < 60) return null;
           const m = lerp(a, b, 0.5);
           const nO = outwardNormal(r, a, b);
-          const sx = m.x * k + view.x - nO.x * 6,
-            sy = m.y * k + view.y - nO.y * 6;
+          const sx = m.x * k + view.x - nO.x * 17,
+            sy = m.y * k + view.y - nO.y * 17;
           const ang = (Math.atan2(nO.y, nO.x) * 180) / Math.PI;
           return (
             <g transform={`translate(${sx} ${sy}) rotate(${ang})`} pointerEvents="none" className="wall-grip">
-              <circle r={12} fill="var(--handle)" stroke="var(--accent)" strokeWidth={2} />
-              <path d="M -7 0 L 7 0 M -7 0 L -3.5 -3.5 M -7 0 L -3.5 3.5 M 7 0 L 3.5 -3.5 M 7 0 L 3.5 3.5" stroke="var(--accent)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              <circle r={13} fill="var(--accent)" stroke="var(--canvas)" strokeWidth={2} />
+              <path d="M -7 0 L 7 0 M -7 0 L -3.5 -3.5 M -7 0 L -3.5 3.5 M 7 0 L 3.5 -3.5 M 7 0 L 3.5 3.5" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
             </g>
           );
         })()}
@@ -660,7 +669,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           const wpx = t.length * 8.5 + 20;
           return (
             <g transform={`translate(${sx} ${sy})`} pointerEvents="none" className="slide-tag">
-              <rect x={-wpx / 2} y={-14} width={wpx} height={28} rx={8} fill="var(--case)" />
+              <rect x={-wpx / 2} y={-14} width={wpx} height={28} rx={14} fill="var(--glass-solid)" stroke="var(--tape)" strokeWidth={1} />
               <text textAnchor="middle" dy="5" fill="var(--tape)" className="slide-tag-t">
                 {t}
               </text>

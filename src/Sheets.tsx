@@ -151,9 +151,11 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose, onDe
               <span className="bad-msg">Try 12 6 or 12' 6 1/2"</span>
             ) : (
               <>
-                {room.name}, wall {wall + 1} of {n}
+                <span className="tb-where-t">
+                  {room.name}, wall {wall + 1} of {n}
+                </span>
                 {!txt && verified && w.predicted ? <span className="tb-tag">worked out</span> : null}
-                {!txt && !verified && !canEstimate ? <span className="tb-tag">sets the scale</span> : null}
+                {!txt && !verified && !canEstimate ? <span className="tb-tag">sets scale</span> : null}
               </>
             )}
           </span>

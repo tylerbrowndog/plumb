@@ -4,7 +4,8 @@ const out = process.argv[2] || 'dist-single/plumb.html';
 const files = readdirSync('dist/assets');
 const css = files.filter((f) => f.endsWith('.css')).map((f) => readFileSync('dist/assets/' + f, 'utf8')).join('\n');
 const js = files.filter((f) => f.endsWith('.js')).map((f) => readFileSync('dist/assets/' + f, 'utf8')).join('\n').replace(/<\/script/gi, '<\\/script');
-const html = `<title>Plumb</title>
+const html = `<meta charset="utf-8">
+<title>Plumb</title>
 <meta name="description" content="Sketch rooms, tap walls to measure, get the exact trim, flooring, tile and paint list.">
 <style>${css}</style>
 <div id="root"></div>

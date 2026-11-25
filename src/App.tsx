@@ -183,12 +183,13 @@ export default function App() {
   // ----- view helpers -----
   const RAIL = 72,
     RIGHT = 64;
-  const sheetH = sel ? (sel.kind === 'wall' ? 236 : sel.kind === 'room' ? 270 : sel.kind === 'opening' ? 300 : 70) : adding ? 236 : 70;
+  const sheetH = sel ? (sel.kind === 'wall' ? 236 : sel.kind === 'room' ? 270 : sel.kind === 'opening' ? (mainSize.w < 380 ? 390 : 330) : 70) : adding ? 236 : 70;
   const fit = useCallback(
     (j: Job = jobRef.current) => {
       const b = bounds(j);
-      const availW = mainSize.w - RAIL - RIGHT - 16;
-      const availH = mainSize.h - 40 - 92;
+      const PAD = 30; // the length tags sit just outside each wall
+      const availW = mainSize.w - RAIL - RIGHT - 16 - PAD * 2;
+      const availH = mainSize.h - 40 - 92 - PAD * 2;
       if (!b) {
         const k = (mainSize.w * 0.55) / 144;
         setView({ k, x: mainSize.w / 2 - 72 * k, y: mainSize.h * 0.4 - 60 * k });
@@ -197,7 +198,7 @@ export default function App() {
       const bw = Math.max(24, b.maxX - b.minX),
         bh = Math.max(24, b.maxY - b.minY);
       const k = Math.min(availW / bw, availH / bh, 8);
-      setView({ k, x: RAIL + 8 + (availW - bw * k) / 2 - b.minX * k, y: 40 + (availH - bh * k) / 2 - b.minY * k });
+      setView({ k, x: RAIL + 8 + PAD + (availW - bw * k) / 2 - b.minX * k, y: 40 + PAD + (availH - bh * k) / 2 - b.minY * k });
     },
     [mainSize],
   );
@@ -211,16 +212,26 @@ export default function App() {
     fit();
   }, [curId, mainSize, fit, tab]);
 
-  // keep the selected wall visible above the keypad
+  // keep the selected wall, or door or window, visible above its bar
   useEffect(() => {
-    if (sel?.kind !== 'wall') return;
-    const r = job.rooms.find((x) => x.id === sel.room);
-    if (!r) return;
-    const [a, b] = wallEnds(r, sel.wall);
-    const m = lerp(a, b, 0.5);
+    let m: { x: number; y: number } | null = null;
+    if (sel?.kind === 'wall') {
+      const r = job.rooms.find((x) => x.id === sel.room);
+      if (!r) return;
+      const [a, b] = wallEnds(r, sel.wall);
+      m = lerp(a, b, 0.5);
+    } else if (sel?.kind === 'opening') {
+      const o = job.openings.find((x) => x.id === sel.id);
+      const r = o && job.rooms.find((x) => x.id === o.room);
+      if (!o || !r || o.wall >= wallCount(r)) return;
+      const [a, b] = wallEnds(r, o.wall);
+      m = lerp(a, b, o.t);
+    }
+    if (!m) return;
+    const pt = m;
     setView((v) => {
-      const sx = m.x * v.k + v.x,
-        sy = m.y * v.k + v.y;
+      const sx = pt.x * v.k + v.x,
+        sy = pt.y * v.k + v.y;
       const top = 24,
         bottom = mainSize.h - sheetH - 30;
       if (sy > top && sy < bottom && sx > RAIL + 10 && sx < mainSize.w - RIGHT - 10) return v;
@@ -229,7 +240,25 @@ export default function App() {
       return { ...v, x: v.x + (tx - sx), y: v.y + (ty - sy) };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel && sel.kind === 'wall' ? sel.room + sel.wall : null]);
+  }, [sel && sel.kind === 'wall' ? sel.room + sel.wall : sel?.kind === 'opening' ? sel.id : null]);
+
+  // when a bar closes, bring the plan back into view if measuring or panning left part of it under the tools
+  const hadBar = useRef(false);
+  useEffect(() => {
+    const open = !!sel || adding;
+    const was = hadBar.current;
+    hadBar.current = open;
+    if (!was || open || tab !== 'plan') return;
+    const b = bounds(jobRef.current);
+    if (!b) return;
+    const pad = 24;
+    const l = b.minX * view.k + view.x - pad,
+      r = b.maxX * view.k + view.x + pad,
+      t = b.minY * view.k + view.y - pad,
+      bt = b.maxY * view.k + view.y + pad;
+    if (l < RAIL || r > mainSize.w - RIGHT || t < 0 || bt > mainSize.h - 84) fit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, adding]);
 
   const firstUnverified = () => {
     for (const r of job.rooms) for (let i = 0; i < wallCount(r); i++) if (!isVerified(r, i)) return { room: r.id, wall: i };
