@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, DoorOpen, AppWindow, Trash2, Ruler, Check, Scale, Delete, X, RectangleHorizontal } from 'lucide-react';
 import type { FloorType, Job, Opening, OpeningType, Room } from './types';
-import { dist, drawnLen, isSquareRoom, isVerified, reshapeWall, uid, wallCount, wallEnds, wallLenIn } from './geometry';
+import { isVerified, uid, wallCount, wallLenIn } from './geometry';
 import { fmtFtIn, parseLength } from './units';
+import { applyMeasurement } from './measure';
 
 type Commit = (fn: (j: Job) => Job) => void;
 
@@ -40,43 +41,8 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
   const save = (inches: number, setScale: boolean) => {
     let nextJob: Job | null = null;
     commit((j) => {
-      let nj = updRoom(j, room.id, (r) => {
-        const walls = r.walls.slice();
-        walls[wall] = { ...walls[wall], lengthIn: inches };
-        return { ...r, walls };
-      });
-      // a shared wall is one real wall: copy the length to the matching wall of an attached room
-      const [a, b] = wallEnds(room, wall);
-      nj = {
-        ...nj,
-        rooms: nj.rooms.map((r) => {
-          if (r.id === room.id) return r;
-          let walls = r.walls;
-          for (let i = 0; i < wallCount(r); i++) {
-            const [c, d] = wallEnds(r, i);
-            const same = (dist(a, c) < 0.5 && dist(b, d) < 0.5) || (dist(a, d) < 0.5 && dist(b, c) < 0.5);
-            if (same && r.walls[i]?.lengthIn == null) {
-              walls = walls === r.walls ? walls.slice() : walls;
-              walls[i] = { ...walls[i], lengthIn: inches };
-            }
-          }
-          return walls === r.walls ? r : { ...r, walls };
-        }),
-      };
-      const dl = drawnLen(room, wall);
-      if ((setScale || !j.scaleSet) && dl > 0) nj = { ...nj, inPerUnit: inches / dl, scaleSet: true };
-      // a square room has two pairs of equal walls: measuring one fills in the one across from it
-      const square = isSquareRoom(room);
-      const across = (wall + 2) % 4;
-      nj = reshapeWall(nj, room.id, wall, inches);
-      if (square && !isVerified(room, across))
-        nj = updRoom(nj, room.id, (r) => {
-          const walls = r.walls.slice();
-          walls[across] = { ...walls[across], lengthIn: inches };
-          return { ...r, walls };
-        });
-      nextJob = nj;
-      return nj;
+      nextJob = applyMeasurement(j, room.id, wall, inches, setScale);
+      return nextJob;
     });
     setTxt('');
     const nx = nextJob ? nextUnverified(nextJob) : null;
@@ -110,7 +76,7 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
             {txt ? (parsed != null ? fmtFtIn(parsed) : <span className="bad">{txt}</span>) : (verified ? '' : '~') + fmtFtIn(len)}
           </div>
           </div>
-          <div className="sub">{txt ? parsed != null ? <span className="typed">You typed {txt}</span> : <span className="bad-msg">Not a length yet. Try 12 6 or 12' 6 1/2"</span> : verified ? <span className="okc"><Check size={13} /> Measured</span> : job.scaleSet ? 'Estimated from your sketch. Type the tape.' : 'Type this wall’s tape length. It sets the scale for the whole job.'}</div>
+          <div className="sub">{txt ? parsed != null ? <span className="typed">You typed {txt}</span> : <span className="bad-msg">Not a length yet. Try 12 6 or 12' 6 1/2"</span> : verified ? (w.predicted ? <span className="okc"><Check size={13} /> Worked out from the other walls. Type the tape to check it.</span> : <span className="okc"><Check size={13} /> Measured</span>) : job.scaleSet ? 'Estimated from your sketch. Type the tape.' : 'Type this wall’s tape length. It sets the scale for the whole job.'}</div>
         </div>
         <button className="icon-btn" onClick={() => go(1)} aria-label="Next wall">
           <ChevronRight size={22} />
@@ -186,7 +152,7 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
               commit((j) =>
                 updRoom(j, room.id, (r) => {
                   const walls = r.walls.slice();
-                  walls[wall] = { ...walls[wall], lengthIn: undefined };
+                  walls[wall] = { ...walls[wall], lengthIn: undefined, predicted: undefined };
                   return { ...r, walls };
                 }),
               )
@@ -454,6 +420,52 @@ export function AddRoomSheet({ defaultName, onAdd, onSketch, onClose }: { defaul
             {name === nm && <Check size={15} />} {nm}
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------- Type tape lengths into the side strip ----------------
+export function TapeSheet({ count, onAdd, onClose }: { count: number; onAdd: (inches: number) => void; onClose: () => void }) {
+  const [txt, setTxt] = useState('');
+  const parsed = parseLength(txt);
+  const key = (k: string) => setTxt((t) => (k === 'del' ? t.slice(0, -1) : (t + k).replace(/\s{2,}/g, ' ')));
+  return (
+    <div className="sheet wall-sheet tape-sheet" role="region" aria-label="Type tape lengths">
+      <div className="sheet-head">
+        <div className="sheet-title">
+          <div className="eyebrow">{count ? `${count} on the strip` : 'Tape lengths'}</div>
+          <div aria-live="polite" className={`readout ${txt ? (parsed != null ? 'typed-ok' : 'typed-bad') : ''}`}>
+            <div className="big-len">{txt ? parsed != null ? fmtFtIn(parsed) : <span className="bad">{txt}</span> : <span className="muted">0' 0"</span>}</div>
+          </div>
+          <div className="sub">{txt && parsed == null ? <span className="bad-msg">Not a length yet. Try 12 6 or 12' 6 1/2"</span> : 'Type each wall as you pull the tape. Drag them onto the walls after.'}</div>
+        </div>
+        <button className="icon-btn close" onClick={onClose} aria-label="Close">
+          <X size={20} />
+        </button>
+      </div>
+      <div className="keypad">
+        {PAD_KEYS.map((k) => (
+          <button key={k} className={`key ${/\d/.test(k) ? 'num' : 'sym'}`} onClick={() => key(k)} aria-label={PAD_NAMES[k]}>
+            {k === 'del' ? <Delete size={20} /> : k === ' ' ? 'space' : k === "'" ? "ft '" : k === '"' ? 'in "' : k}
+          </button>
+        ))}
+      </div>
+      <div className="row gap">
+        <button className="btn ghost" onClick={onClose}>
+          Done
+        </button>
+        <button
+          className="btn primary grow"
+          disabled={parsed == null}
+          onClick={() => {
+            if (parsed == null) return;
+            onAdd(parsed);
+            setTxt('');
+          }}
+        >
+          <Check size={18} /> Add to strip
+        </button>
       </div>
     </div>
   );

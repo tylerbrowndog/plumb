@@ -408,7 +408,7 @@ export function reshapeWall(job: Job, roomId: string, wall: number, inches: numb
     let best = -1,
       bestLen = 0;
     for (let j = 0; j < n; j++) {
-      if (j === wall || isVerified(r, j)) continue;
+      if (j === wall || (isVerified(r, j) && !r.walls[j]?.predicted)) continue;
       const lj = Math.hypot(edges[j].x, edges[j].y);
       if (lj < 1e-6) continue;
       const dot = (edges[j].x * dir.x + edges[j].y * dir.y) / lj;

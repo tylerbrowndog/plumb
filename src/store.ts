@@ -156,6 +156,7 @@ export function sanitizeJob(raw: unknown): Job | null {
       const out: Room['walls'][number] = {};
       if (typeof w.lengthIn === 'number' && Number.isFinite(w.lengthIn) && w.lengthIn > 0 && w.lengthIn <= 2400) out.lengthIn = w.lengthIn;
       if (w.noBase === true) out.noBase = true;
+      if (w.predicted === true && out.lengthIn) out.predicted = true;
       return out;
     });
     const floor = r.floor === 'lvp' || r.floor === 'tile' ? r.floor : 'none';
@@ -215,6 +216,11 @@ export function sanitizeJob(raw: unknown): Job | null {
     settings: safeSettings(settings),
     checks,
     notes: str(j.notes, '', 5000),
+    tray: (Array.isArray(j.tray) ? j.tray : [])
+      .slice(0, 60)
+      .map((t) => (t && typeof t === 'object' ? (t as Record<string, unknown>).inches : null))
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 2400)
+      .map((inches) => ({ id: uid(), inches })),
   };
 }
 

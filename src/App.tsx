@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MousePointer2, PenLine, SquarePlus, DoorOpen, AppWindow, Undo2, Redo2, Maximize, Menu, ChevronDown, CircleHelp } from 'lucide-react';
+import { MousePointer2, PenLine, SquarePlus, DoorOpen, AppWindow, Undo2, Redo2, Maximize, Menu, ChevronDown, CircleHelp, Ruler } from 'lucide-react';
 import type { Job, Selection, Tool } from './types';
 import PlanCanvas, { type View } from './PlanCanvas';
-import { AddRoomSheet, OpeningSheet, RoomSheet, WallSheet } from './Sheets';
+import { AddRoomSheet, OpeningSheet, RoomSheet, TapeSheet, WallSheet } from './Sheets';
+import { applyMeasurement } from './measure';
 import Materials from './Materials';
 import Jobs from './Jobs';
 import { loadCurrent, loadJobs, markWelcome, newJob, newRoom, sampleJob, saveCurrent, saveJobs, seenWelcome, wipeAll } from './store';
 import Welcome from './Welcome';
-import { bounds, isVerified, wallCount, wallEnds, lerp, roomBySize } from './geometry';
+import { bounds, isVerified, wallCount, wallEnds, lerp, roomBySize, segDist, uid } from './geometry';
 import { fmtFtIn } from './units';
 import { estimate } from './estimate';
 
@@ -21,7 +22,7 @@ const TOOLS: { t: Tool | 'add'; icon: typeof PenLine; label: string }[] = [
 
 const HINTS: Record<Tool, string> = {
   select: 'Tap a wall to measure it. Drag a corner to move it.',
-  draw: 'Sketch a room with one finger. Lines snap straight and square. Two fingers move and zoom.',
+  draw: 'Sketch rooms with one finger. Then drag your tape lengths onto the walls.',
   rect: 'Drag corner to corner for a square room. Start on a corner to attach it.',
   door: 'Tap a wall to add a door.',
   window: 'Tap a wall to add a window.',
@@ -45,6 +46,10 @@ export default function App() {
 
   const [tool, setTool] = useState<Tool>('select');
   const [adding, setAdding] = useState(false);
+  const [taping, setTaping] = useState(false);
+  const [armed, setArmed] = useState<string | null>(null);
+  const [drag, setDrag] = useState<{ id: string; x: number; y: number; sx: number; sy: number; moved: boolean } | null>(null);
+  const [hot, setHot] = useState<{ room: string; wall: number } | null>(null);
   const [sel, setSel] = useState<Selection>(null);
   const [tab, setTab] = useState<'plan' | 'list'>('plan');
   const [drawer, setDrawer] = useState(false);
@@ -122,6 +127,8 @@ export default function App() {
       if (e.key === 'Escape') {
         if (drawer) setDrawer(false);
         else if (adding) setAdding(false);
+        else if (taping) setTaping(false);
+        else if (armed) setArmed(null);
         else if (sel) setSel(null);
         return;
       }
@@ -140,7 +147,7 @@ export default function App() {
   const fit = useCallback(
     (j: Job = jobRef.current) => {
       const b = bounds(j);
-      const availW = mainSize.w - 94;
+      const availW = mainSize.w - 122;
       const availH = mainSize.h - 72 - 168;
       if (!b) {
         const k = (mainSize.w * 0.55) / 144;
@@ -176,8 +183,8 @@ export default function App() {
         sy = m.y * v.k + v.y;
       const top = 24,
         bottom = mainSize.h - sheetH - 30;
-      if (sy > top && sy < bottom && sx > 24 && sx < mainSize.w - 70) return v;
-      const tx = (mainSize.w - 46) / 2,
+      if (sy > top && sy < bottom && sx > 24 && sx < mainSize.w - 96) return v;
+      const tx = (mainSize.w - 72) / 2,
         ty = top + (bottom - top) / 2;
       return { ...v, x: v.x + (tx - sx), y: v.y + (ty - sy) };
     });
@@ -223,6 +230,77 @@ export default function App() {
     toast(`${nm} added, ${fmtFtIn(L)} by ${fmtFtIn(W)}. Tap a wall to add a door.`);
   };
 
+  // ----- tape strip: lengths typed first, then dropped on walls -----
+  const tray = job.tray ?? [];
+  const wallAt = (cx: number, cy: number) => {
+    const svg = mainRef.current?.querySelector('svg.plan');
+    if (!svg) return null;
+    const rc = svg.getBoundingClientRect();
+    const wx = (cx - rc.left - view.x) / view.k,
+      wy = (cy - rc.top - view.y) / view.k;
+    let best: { room: string; wall: number } | null = null;
+    let bd = 34 / view.k;
+    for (const r of job.rooms)
+      for (let i = 0; i < wallCount(r); i++) {
+        const [a, b] = wallEnds(r, i);
+        const d = segDist({ x: wx, y: wy }, a, b).d;
+        if (d < bd) {
+          bd = d;
+          best = { room: r.id, wall: i };
+        }
+      }
+    return best;
+  };
+  const dropTag = (id: string, room: string, wall: number) => {
+    const t = (jobRef.current.tray ?? []).find((x) => x.id === id);
+    const r = jobRef.current.rooms.find((x) => x.id === room);
+    if (!t || !r) return;
+    const before = r.walls.filter((w) => w.predicted).length;
+    commit((j) => ({ ...applyMeasurement(j, room, wall, t.inches), tray: (j.tray ?? []).filter((x) => x.id !== id) }));
+    const after = jobRef.current.rooms.find((x) => x.id === room)?.walls.filter((w) => w.predicted).length ?? 0;
+    const more = Math.max(0, after - before);
+    setArmed(null);
+    setHot(null);
+    toast(`${fmtFtIn(t.inches)} on ${r.name}, wall ${wall + 1}.${more ? ` Plumb worked out ${more} more.` : ''}`);
+  };
+  const planSetSel = (s: Selection) => {
+    if (armed && s?.kind === 'wall') return dropTag(armed, s.room, s.wall);
+    if (armed && !s) setArmed(null);
+    setSel(s);
+  };
+  const tagDown = (e: React.PointerEvent, id: string) => {
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    setDrag({ id, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false });
+  };
+  const tagMove = (e: React.PointerEvent) => {
+    if (!drag) return;
+    const moved = drag.moved || Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 8;
+    setDrag({ ...drag, x: e.clientX, y: e.clientY, moved });
+    if (moved) setHot(wallAt(e.clientX, e.clientY));
+  };
+  const tagUp = (e: React.PointerEvent) => {
+    if (!drag) return;
+    const d = drag;
+    setDrag(null);
+    if (!d.moved) {
+      setSel(null);
+      setArmed((a) => (a === d.id ? null : d.id));
+      return;
+    }
+    const w = wallAt(e.clientX, e.clientY);
+    setHot(null);
+    if (w) dropTag(d.id, w.room, w.wall);
+  };
+  const removeTag = (id: string) => {
+    commit((j) => ({ ...j, tray: (j.tray ?? []).filter((x) => x.id !== id) }));
+    setArmed(null);
+  };
+  const armedTag = tray.find((t) => t.id === armed);
+
   const selRoom = sel && sel.kind !== 'opening' ? job.rooms.find((r) => r.id === sel.room) : null;
   const selOpening = sel?.kind === 'opening' ? job.openings.find((o) => o.id === sel.id) : null;
 
@@ -250,7 +328,46 @@ export default function App() {
 
       {tab === 'plan' ? (
         <div className="main" ref={mainRef}>
-          <PlanCanvas job={job} sel={sel} setSel={setSel} tool={tool} setTool={setTool} commit={commit} view={view} setView={setView} allow45={allow45} />
+          <PlanCanvas job={job} sel={sel} setSel={planSetSel} tool={tool} setTool={setTool} commit={commit} view={view} setView={setView} allow45={allow45} hot={hot} />
+
+          {!sel && !adding && (
+            <div className="tray" role="group" aria-label="Tape lengths to drop on walls">
+              <button className={`tray-add ${taping ? 'on' : ''}`} onClick={() => setTaping(true)} aria-label="Type tape lengths">
+                <Ruler size={20} />
+                <span>Tape</span>
+              </button>
+              <div className="tray-list">
+                {tray.map((t) => (
+                  <button
+                    key={t.id}
+                    className={`tag ${armed === t.id ? 'armed' : ''} ${drag?.id === t.id && drag.moved ? 'lifted' : ''}`}
+                    onPointerDown={(e) => tagDown(e, t.id)}
+                    onPointerMove={tagMove}
+                    onPointerUp={tagUp}
+                    onPointerCancel={() => {
+                      setDrag(null);
+                      setHot(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setArmed((a) => (a === t.id ? null : t.id));
+                      }
+                    }}
+                    aria-pressed={armed === t.id}
+                    aria-label={`${fmtFtIn(t.inches)}. Drag onto a wall, or tap it and then tap a wall.`}
+                  >
+                    {fmtFtIn(t.inches)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {drag?.moved && (
+            <div className="tag ghost" style={{ left: drag.x, top: drag.y }} aria-hidden>
+              {fmtFtIn(tray.find((t) => t.id === drag.id)?.inches ?? 0)}
+            </div>
+          )}
 
           <div className="view-ctl">
             <button className="vbtn" onClick={undo} disabled={!H().past.length} aria-label="Undo">
@@ -264,7 +381,7 @@ export default function App() {
             </button>
           </div>
 
-          {!sel && !adding && job.rooms.length === 0 && tool === 'select' && (
+          {!sel && !adding && !taping && job.rooms.length === 0 && tool === 'select' && (
             <div className="first-room" role="region" aria-label="Add the first room">
               <h2>Add the first room</h2>
               <p>Pull the tape wall to wall, then type the length and width. Doors and windows go on after.</p>
@@ -277,9 +394,23 @@ export default function App() {
             </div>
           )}
 
-          {!sel && !adding && (
+          {!sel && !adding && !taping && (
             <div className="hintbar" aria-live="polite">
-              {job.rooms.length > 0 && tool === 'select' ? (
+              {armedTag ? (
+                <>
+                  <span className="strip-hint">
+                    Tap the wall that's <b>{fmtFtIn(armedTag.inches)}</b>.
+                  </span>
+                  <button className="mini" onClick={() => removeTag(armedTag.id)}>
+                    Remove
+                  </button>
+                  <button className="mini on" onClick={() => setArmed(null)}>
+                    Cancel
+                  </button>
+                </>
+              ) : job.rooms.length > 0 && tray.length > 0 && !drag ? (
+                <span className="strip-hint">Drag each tape length onto its wall. Two sides of a square room are enough.</span>
+              ) : job.rooms.length > 0 && tool === 'select' ? (
                 <>
                   <div className="strip-main">
                     <span className="strip-line">
@@ -330,6 +461,7 @@ export default function App() {
                 key={t}
                 className={`tool ${(t === 'add' ? adding : tool === t && !adding) ? 'on' : ''}`}
                 onClick={() => {
+                  setTaping(false);
                   if (t === 'add') {
                     setSel(null);
                     setAdding(true);
@@ -371,6 +503,13 @@ export default function App() {
                 commit((j) => ({ ...j, rooms: j.rooms.filter((r) => r.id !== id), openings: j.openings.filter((o) => o.room !== id) }));
                 setSel(null);
               }}
+            />
+          )}
+          {taping && (
+            <TapeSheet
+              count={tray.length}
+              onAdd={(inches) => commit((j) => ({ ...j, tray: [...(j.tray ?? []), { id: uid(), inches }] }))}
+              onClose={() => setTaping(false)}
             />
           )}
           {adding && (

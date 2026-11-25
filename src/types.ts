@@ -22,6 +22,8 @@ export interface Wall {
   lengthIn?: number;
   /** no baseboard on this wall (cabinets, tub, etc) */
   noBase?: boolean;
+  /** the length was worked out from the other walls, not taped */
+  predicted?: boolean;
 }
 
 export interface Room {
@@ -93,6 +95,8 @@ export interface Job {
   /** checked-off shopping / don't-forget items */
   checks: Record<string, boolean>;
   notes: string;
+  /** tape lengths typed in, waiting to be dropped on a wall */
+  tray?: { id: string; inches: number }[];
 }
 
 export type Selection =

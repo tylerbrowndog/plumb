@@ -39,6 +39,8 @@ interface Props {
   view: View;
   setView: (v: View | ((v: View) => View)) => void;
   allow45: boolean;
+  /** the wall a dragged tape tag is over */
+  hot?: { room: string; wall: number } | null;
 }
 
 type Gesture =
@@ -71,7 +73,7 @@ export function openingGeom(job: Job, r: Room, o: Opening) {
   return { a, b, p0: lerp(a, b, t0), p1: lerp(a, b, t1), c: lerp(a, b, o.t), nOut: outwardNormal(r, a, b), w: (t1 - t0) * dl };
 }
 
-export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, view, setView, allow45 }: Props) {
+export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, view, setView, allow45, hot }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const pointers = useRef(new Map<number, Pt>());
   const g = useRef<Gesture | null>(null);
@@ -102,7 +104,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
 
   // ---------- label layout ----------
   const labels = useMemo(() => {
-    const out: { room: string; wall: number; x: number; y: number; text: string; verified: boolean; w: number; noBase: boolean }[] = [];
+    const out: { room: string; wall: number; x: number; y: number; text: string; verified: boolean; predicted: boolean; w: number; noBase: boolean }[] = [];
     for (const r of shown.rooms) {
       const n = wallCount(r);
       for (let i = 0; i < n; i++) {
@@ -115,7 +117,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
         const len = wallLenIn(shown, r, i);
         const verified = isVerified(r, i);
         const text = (verified ? '' : '~') + fmtFtIn(len);
-        out.push({ room: r.id, wall: i, x: m.x + nOut.x * off, y: m.y + nOut.y * off, text, verified, w: text.length * 7 + 16, noBase: !!r.walls[i]?.noBase });
+        out.push({ room: r.id, wall: i, x: m.x + nOut.x * off, y: m.y + nOut.y * off, text, verified, predicted: !!r.walls[i]?.predicted, w: text.length * 7 + 16, noBase: !!r.walls[i]?.noBase });
       }
     }
     return out;
@@ -327,9 +329,8 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           const name = rec.closed ? `Room ${job.rooms.filter((r) => r.closed).length + 1}` : `Wall run ${job.rooms.filter((r) => !r.closed).length + 1}`;
           const room = newRoom(name, rec.pts, rec.closed);
           commit((j) => ({ ...j, rooms: [...j.rooms, room] }));
-          // straight to the tape: measure the first wall of what was just drawn
-          setTool('select');
-          setSel({ kind: 'wall', room: room.id, wall: 0 });
+          // stay in sketch so the next room can go right on; tape lengths get dropped on after
+          setSel(null);
         }
       }
     } else if (gs.type === 'rect') {
@@ -339,8 +340,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
         if (Math.abs(pts[0].x - pts[2].x) > 0 && Math.abs(pts[0].y - pts[2].y) > 0) {
           const room = newRoom(`Room ${job.rooms.filter((r) => r.closed).length + 1}`, pts, true);
           commit((j) => ({ ...j, rooms: [...j.rooms, room] }));
-          setTool('select');
-          setSel({ kind: 'wall', room: room.id, wall: 0 });
+          setSel(null);
         }
       }
     } else if (gs.type === 'place') {
@@ -475,6 +475,20 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
             );
           })()}
 
+        {/* the wall a tape tag would land on */}
+        {hot &&
+          (() => {
+            const r = shown.rooms.find((x) => x.id === hot.room);
+            if (!r || hot.wall >= wallCount(r)) return null;
+            const [a, b] = wallEnds(r, hot.wall);
+            return (
+              <g>
+                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--tape)" strokeWidth={18} strokeOpacity={0.6} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--tape-edge)" strokeWidth={4} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+              </g>
+            );
+          })()}
+
         {/* openings */}
         {shown.openings.map((o) => {
           const r = shown.rooms.find((x) => x.id === o.room);
@@ -544,7 +558,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           <g key={l.room + l.wall} transform={`translate(${sx} ${sy})`}>
             {l.verified || isSel ? (
               <>
-                <rect x={-l.w / 2} y={-11} width={l.w} height={22} rx={2.5} fill={isSel ? 'var(--chalk)' : 'var(--tape)'} stroke={isSel ? 'none' : 'var(--tape-edge)'} strokeWidth={1} />
+                <rect x={-l.w / 2} y={-11} width={l.w} height={22} rx={2.5} fill={isSel ? 'var(--chalk)' : 'var(--tape)'} stroke={isSel ? 'none' : 'var(--tape-edge)'} strokeWidth={l.predicted ? 1.5 : 1} strokeDasharray={l.predicted && !isSel ? '4 2' : undefined} />
                 {!isSel && <rect x={-l.w / 2 + 2} y={-11} width={l.w - 4} height={22} fill="url(#tapeTicks)" />}
               </>
             ) : (

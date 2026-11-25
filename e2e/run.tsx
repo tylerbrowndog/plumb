@@ -76,14 +76,14 @@ log('title:', $('.job-title').textContent, '| first room card:', $('.first-room 
 await click(btn('Sketch an odd shape'), 'sketch instead');
 log('hint:', $('.hintbar')?.textContent);
 await stroke([[110, 150], [330, 150], [330, 420], [110, 420], [112, 155]]);
-log('after draw opens wall:', $('.eyebrow')?.textContent, $('.big-len')?.textContent);
-await click($('.sheet .icon-btn.close'), 'close first wall');
-await click($$('.tool').find((b) => b.textContent === 'Sketch'), 'sketch tool');
+log('after draw, still sketching, no sheet:', !$('.sheet'), $('.tool.on')?.textContent);
 await new Promise((r) => setTimeout(r, 300));
 const saved = JSON.parse(localStorage.getItem('plumb.jobs.v1') || '[]');
 log('saved rooms:', saved[0]?.rooms?.length, JSON.stringify(saved[0]?.rooms?.[0]?.pts));
 await stroke([[330, 150], [430, 150], [430, 300], [330, 300], [332, 152]]);
 log('labels:', $$('text.lbl').map((t) => t.textContent).join(' | '));
+await click($$('.tool').find((b) => b.textContent === 'Select'), 'select tool');
+await click(btn('Measure'), 'measure');
 log('wall sheet:', $('.eyebrow')?.textContent, $('.big-len')?.textContent, '|', $('.sub')?.textContent);
 for (const k of ['1', '2', "ft '", 'space', '6']) await click(key(k), k);
 log('typed preview:', $('.big-len')?.textContent);
@@ -169,6 +169,60 @@ await ptr('pointermove', 300, 300, 2);
 await ptr('pointerup', 300, 300, 2);
 await ptr('pointerup', 150, 300, 1);
 log('pinch ok');
+
+// tape strip: type lengths, then drag one onto a wall and tap-place the other
+await click($('.job-btn'), 'drawer for tray');
+await click(btn('New job'), 'new job');
+await click(btn('Sketch an odd shape'), 'sketch instead 2');
+await stroke([[110, 200], [300, 200], [300, 360], [110, 360], [112, 205]]);
+await click($('button[aria-label="Type tape lengths"]'), 'tape btn');
+for (const k of ['1', '2']) await click(key(k), k);
+await click(btn('Add to strip'), 'add1');
+for (const k of ['1', '0', 'space', '6']) await click(key(k), k);
+await click(btn('Add to strip'), 'add2');
+log('tape sheet eyebrow:', $('.tape-sheet .eyebrow')?.textContent);
+await click(btn('Done'), 'done tape');
+log('tags:', $$('.tray .tag').map((t) => t.textContent).join(', '), '| hint:', $('.hintbar')?.textContent);
+{
+  const tr3 = $('svg.plan > g').getAttribute('transform')!;
+  const [, x3, y3, k3] = tr3.match(/translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)/)!.map(Number) as number[];
+  const d3 = $('svg.plan > g path[stroke]').getAttribute('d')!.match(/-?[\d.]+/g)!.map(Number);
+  const P = (i: number) => ({ x: d3[i * 2] * k3 + x3, y: d3[i * 2 + 1] * k3 + y3 });
+  const top = { x: (P(0).x + P(1).x) / 2, y: (P(0).y + P(1).y) / 2 };
+  const tag = $$('.tray .tag')[0];
+  const tptr = async (type: string, x: number, y: number) => {
+    const ev = new dom.window.MouseEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0 });
+    Object.defineProperty(ev, 'pointerId', { value: 7 });
+    await act(async () => {
+      tag.dispatchEvent(ev);
+    });
+  };
+  await tptr('pointerdown', 350, 260);
+  for (let i = 1; i <= 6; i++) await tptr('pointermove', 350 + (top.x - 350) * (i / 6), 260 + (top.y - 260) * (i / 6));
+  log('dragging shows ghost:', !!$('.tag.ghost'));
+  await tptr('pointerup', top.x, top.y);
+  log('after drop toast:', $('.toast')?.textContent, '| tags left:', $$('.tray .tag').length);
+  // tap the remaining tag, then tap the right wall
+  const tag2 = $$('.tray .tag')[0];
+  for (const t of ['pointerdown', 'pointerup']) {
+    const ev = new dom.window.MouseEvent(t, { bubbles: true, clientX: 350, clientY: 260, button: 0 });
+    Object.defineProperty(ev, 'pointerId', { value: 8 });
+    await act(async () => {
+      tag2.dispatchEvent(ev);
+    });
+  }
+  log('armed hint:', $('.hintbar')?.textContent);
+  const tr4 = $('svg.plan > g').getAttribute('transform')!;
+  const [, x4, y4, k4] = tr4.match(/translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)/)!.map(Number) as number[];
+  const d4 = $('svg.plan > g path[stroke]').getAttribute('d')!.match(/-?[\d.]+/g)!.map(Number);
+  const Q = (i: number) => ({ x: d4[i * 2] * k4 + x4, y: d4[i * 2 + 1] * k4 + y4 });
+  const right = { x: (Q(1).x + Q(2).x) / 2, y: (Q(1).y + Q(2).y) / 2 };
+  await ptr('pointerdown', right.x, right.y);
+  await ptr('pointerup', right.x, right.y);
+  log('after tap-place toast:', $('.toast')?.textContent);
+  log('tray labels:', $$('text.lbl').map((t) => t.textContent).join(' | '), '| strip:', $('.hintbar')?.textContent);
+  log('area:', $$('text.rarea').map((t) => t.textContent).join(','));
+}
 await click($('.job-btn'), 'drawer2');
 await click(btn('Erase all Plumb data'), 'wipe1');
 await click(btn('Erase all'), 'wipe2');
