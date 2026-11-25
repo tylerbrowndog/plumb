@@ -291,23 +291,34 @@ export default function App() {
   }, [sel && sel.kind === 'wall' ? sel.room + sel.wall : sel?.kind === 'opening' ? sel.id : sel?.kind === 'room' ? 'room:' + sel.room : null]);
 
   // when a bar closes, bring the plan back into view if measuring or panning left part of it under the tools
-  const hadBar = useRef(false);
-  useEffect(() => {
-    const open = !!sel || adding;
-    const was = hadBar.current;
-    hadBar.current = open;
-    if (!was || open || tab !== 'plan') return;
+  const refitIfHidden = (pad = 24) => {
+    if (tab !== 'plan') return;
     const b = bounds(jobRef.current);
     if (!b) return;
-    const pad = 24;
     const l = b.minX * view.k + view.x - pad,
       r = b.maxX * view.k + view.x + pad,
       t = b.minY * view.k + view.y - pad,
       bt = b.maxY * view.k + view.y + pad;
     const under = toolRects().some((q) => l < q.r && r > q.l && t < q.b && bt > q.t);
     if (under || l < 0 || r > mainSize.w || t < 0 || bt > mainSize.h - 84) fit();
+  };
+  const hadBar = useRef(false);
+  useEffect(() => {
+    const open = !!sel || adding;
+    const was = hadBar.current;
+    hadBar.current = open;
+    if (!was || open) return;
+    refitIfHidden();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, adding]);
+  // a new room drawn partly under the tools or off the edge: bring the whole plan into view
+  const roomCount = useRef(job.rooms.length);
+  useEffect(() => {
+    const was = roomCount.current;
+    roomCount.current = job.rooms.length;
+    if (job.rooms.length > was && !sel && !adding) refitIfHidden(-4);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job.rooms.length, curId]);
 
   const firstUnverified = () => {
     for (const r of job.rooms) for (let i = 0; i < wallCount(r); i++) if (!isVerified(r, i)) return { room: r.id, wall: i };

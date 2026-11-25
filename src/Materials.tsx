@@ -198,9 +198,9 @@ export default function Materials({ job, commit, onVerify, toast }: { job: Job; 
                 {(r.room.paintWalls || r.room.paintCeiling) && <span>paint {[r.room.paintWalls && 'walls', r.room.paintCeiling && 'ceiling'].filter(Boolean).join(' + ')}</span>}
                 {r.baseIn > 0 && <span>{Math.ceil(r.baseIn / 12)} LF base</span>}
                 {r.doors + r.openings > 0 && <span>{r.doors + r.openings} door{r.doors + r.openings > 1 ? 's' : ''}</span>}
-                {r.windows > 0 && <span>{r.windows} win</span>}
-                {r.inside > 0 && <span>{r.inside} copes</span>}
-                {r.outside > 0 && <span>{r.outside} miters</span>}
+                {r.windows > 0 && <span>{r.windows} window{r.windows > 1 ? 's' : ''}</span>}
+                {r.inside > 0 && <span>{r.inside} cope{r.inside > 1 ? 's' : ''}</span>}
+                {r.outside > 0 && <span>{r.outside} miter{r.outside > 1 ? 's' : ''}</span>}
               </div>
             </div>
           ))}

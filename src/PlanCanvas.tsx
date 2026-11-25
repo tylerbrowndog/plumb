@@ -11,6 +11,7 @@ import {
   pointInPoly,
   recognize,
   rectPts,
+  squareUp,
   segDist,
   signedArea,
   roomAreaIn2,
@@ -124,9 +125,11 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
         let rot = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
         if (rot >= 90) rot -= 180;
         if (rot < -90) rot += 180;
-        const along = dl * view.k > w + 10;
+        // a short upright wall still gets its tag turned along it, so it hugs the wall and doesn't
+        // stick out sideways past the edge of the screen
+        const along = dl * view.k > w + 10 || Math.abs(nOut.x) > 0.7;
         if (!along) rot = 0;
-        const off = (along ? 15 : 13 + Math.abs(nOut.x) * (w / 2 - 11)) / view.k;
+        const off = (along ? 15 : 13) / view.k;
         out.push({ room: r.id, wall: i, x: m.x + nOut.x * off, y: m.y + nOut.y * off, text, verified, predicted: !!r.walls[i]?.predicted, w, noBase: !!r.walls[i]?.noBase, rot });
       }
     }
@@ -425,7 +428,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
     } else if (gs.type === 'rect') {
       if (!gs.moved) tapSelect();
       else {
-        const pts = rectPts(gs.a, gs.b, allVertices(job), px);
+        const pts = squareUp(rectPts(gs.a, gs.b, allVertices(job), px), true, allVertices(job), px) ?? rectPts(gs.a, gs.b, allVertices(job), px);
         if (Math.abs(pts[0].x - pts[2].x) > 0 && Math.abs(pts[0].y - pts[2].y) > 0) {
           const room = newRoom(`Room ${job.rooms.filter((r) => r.closed).length + 1}`, pts, true);
           commit((j) => ({ ...j, rooms: [...j.rooms, room] }));
@@ -502,7 +505,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
     }
   }
   if (gs?.type === 'rect' && gs.moved) {
-    preview = rectPts(gs.a, gs.b, allVertices(job), px);
+    preview = squareUp(rectPts(gs.a, gs.b, allVertices(job), px), true, allVertices(job), px) ?? rectPts(gs.a, gs.b, allVertices(job), px);
     previewClosed = true;
   }
 

@@ -2329,3 +2329,11 @@ body {
     display: none;
   }
 }
+
+/* tablets and wide windows: the bars stay phone-width and centred, not stretched edge to edge */
+.tapebar,
+.hintbar {
+  max-width: 560px;
+  margin-left: auto;
+  margin-right: auto;
+}

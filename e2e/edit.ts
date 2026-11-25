@@ -2,6 +2,7 @@
 import { alignWallOffset, closeRun, deleteCorner, deleteWall, moveRoom, moveWall, roomDragOffset, splitWall } from '../src/edit.ts';
 import type { Job } from '../src/types.ts';
 import { applyMeasurement } from '../src/measure.ts';
+import { squareUp } from '../src/geometry.ts';
 
 let fails = 0;
 const ok = (c: boolean, m: string) => {
@@ -112,6 +113,22 @@ const base = (): Job =>
   const c = j.rooms.find((r) => r.id === 'C')!;
   ok(c.pts[0].y === 0 && c.pts[2].y === 48 && c.pts[3].y === 48, 'closet keeps its top and follows the shorter notch');
   ok(c.walls[3].lengthIn === 48 && c.walls[1].lengthIn === 48, 'closet takes the shared length and works out its other side');
+}
+// rooms drawn side by side come out square and lined up, and a hall under both narrows with the room above it
+{
+  const anchors = [{ x: 0, y: 0 }, { x: 72, y: 0 }, { x: 72, y: 84 }, { x: 0, y: 84 }];
+  const sq = squareUp([{ x: 72, y: 0 }, { x: 144, y: 0 }, { x: 144, y: 90 }, { x: 72, y: 90 }], true, anchors, 1)!;
+  ok(sq[2].y === 84 && sq[3].y === 84 && sq[2].x === 144, 'second room squares onto the first');
+  const mk = (id: string, pts: { x: number; y: number }[]) => ({ id, name: id, pts, closed: true, walls: pts.map(() => ({})) });
+  const A = mk('A', [{ x: 0, y: 0 }, { x: 72, y: 0 }, { x: 72, y: 84 }, { x: 0, y: 84 }]);
+  const B = mk('B', [{ x: 72, y: 0 }, { x: 144, y: 0 }, { x: 144, y: 84 }, { x: 72, y: 84 }]);
+  const H = mk('H', [{ x: 0, y: 84 }, { x: 144, y: 84 }, { x: 144, y: 132 }, { x: 0, y: 132 }]);
+  const j0 = { ...base(), rooms: [A, B, H], openings: [], inPerUnit: 1 } as unknown as Job;
+  const j = applyMeasurement(j0, 'B', 0, 60);
+  const a = j.rooms.find((r) => r.id === 'A')!,
+    h = j.rooms.find((r) => r.id === 'H')!;
+  ok(a.pts[1].x === 72 && a.pts[2].x === 72, 'the room beside it stays put');
+  ok(h.pts[0].x === 0 && h.pts[1].x === 132 && h.pts[2].x === 132, 'the hall under both narrows with it');
 }
 console.log(fails ? `${fails} failed` : 'all good');
 process.exit(fails ? 1 : 0);

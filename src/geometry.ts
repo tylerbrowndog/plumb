@@ -273,13 +273,83 @@ export function recognize(raw: Pt[], px: number, allow45 = true, anchors: Pt[] =
   }
   // clean tiny rounding
   const cleaned = pts.map((p) => ({ x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 }));
-  // snap other vertices to anchors (attach to other rooms)
-  const out = cleaned.map((p, i) => {
-    if (i === 0) return p;
-    const a = nearestAnchor(p, anchors, 18 * px);
-    return a ? { ...a } : p;
-  });
+  // attach to other rooms: corners land on their corners, and walls line up with theirs,
+  // while every wall stays straight and every corner square
+  const square = squareUp(cleaned, closed, anchors, px);
+  const out =
+    square ??
+    cleaned.map((p, i) => {
+      if (i === 0) return p;
+      const a = nearestAnchor(p, anchors, 18 * px);
+      return a ? { ...a } : p;
+    });
   return { pts: dedupe(out, closed), closed };
+}
+
+/**
+ * Snap a square-cornered outline onto the rooms around it without bending it: corners that share
+ * a wall share an x (or a y), so they move together. Each shared x (or y) takes a nearby corner's
+ * value, or else lines up with another room's wall. Returns null if the outline has a slanted wall.
+ */
+export function squareUp(pts: Pt[], closed: boolean, anchors: Pt[], px: number): Pt[] | null {
+  const n = pts.length;
+  if (n < 2) return null;
+  const edges = closed ? n : n - 1;
+  const fx = pts.map((_, i) => i),
+    fy = pts.map((_, i) => i);
+  const find = (f: number[], i: number): number => (f[i] === i ? i : (f[i] = find(f, f[i])));
+  for (let i = 0; i < edges; i++) {
+    const a = pts[i],
+      b = pts[(i + 1) % n];
+    const h = Math.abs(a.y - b.y) < 1e-6,
+      v = Math.abs(a.x - b.x) < 1e-6;
+    if (!h && !v) return null;
+    if (h) fy[find(fy, i)] = find(fy, (i + 1) % n);
+    if (v) fx[find(fx, i)] = find(fx, (i + 1) % n);
+  }
+  const corner = 18 * px,
+    line = 12 * px;
+  const out = pts.map((p) => ({ ...p }));
+  const tooShort = () => {
+    for (let i = 0; i < edges; i++) if (dist(out[i], out[(i + 1) % n]) < GRID * 0.9) return true;
+    return false;
+  };
+  for (const axis of ['x', 'y'] as const) {
+    const f = axis === 'x' ? fx : fy;
+    const groups = new Map<number, number[]>();
+    pts.forEach((_, i) => {
+      const g = find(f, i);
+      groups.set(g, [...(groups.get(g) ?? []), i]);
+    });
+    for (const members of groups.values()) {
+      const val = pts[members[0]][axis];
+      let best: number | null = null,
+        bd = corner;
+      for (const i of members)
+        for (const a of anchors) {
+          const d = dist(a, pts[i]);
+          if (d < bd) {
+            bd = d;
+            best = a[axis];
+          }
+        }
+      if (best == null) {
+        bd = line;
+        for (const a of anchors) {
+          const d = Math.abs(a[axis] - val);
+          if (d < bd) {
+            bd = d;
+            best = a[axis];
+          }
+        }
+      }
+      if (best == null || Math.abs(best - val) < 1e-9) continue;
+      const keep = members.map((i) => out[i][axis]);
+      for (const i of members) out[i][axis] = best;
+      if (tooShort()) members.forEach((i, k) => (out[i][axis] = keep[k]));
+    }
+  }
+  return out;
 }
 
 function dedupe(pts: Pt[], closed: boolean) {
@@ -304,7 +374,8 @@ function recognizeAsRect(raw: Pt[], anchors: Pt[], px: number): Recognized {
     maxX = Math.max(maxX, p.x);
     maxY = Math.max(maxY, p.y);
   }
-  return { pts: rectPts({ x: minX, y: minY }, { x: maxX, y: maxY }, anchors, px), closed: true };
+  const pts = rectPts({ x: minX, y: minY }, { x: maxX, y: maxY }, [], px);
+  return { pts: squareUp(pts, true, anchors, px) ?? pts, closed: true };
 }
 
 export function nearestAnchor(p: Pt, anchors: Pt[], maxD: number): Pt | null {
@@ -450,19 +521,42 @@ export function reshapeWall(job: Job, roomId: string, wall: number, inches: numb
   while (queue.length) {
     const { id, pairs } = queue.shift()!;
     const x = job.rooms.find((q) => q.id === id)!;
-    const ds = x.pts.flatMap((p) => pairs.filter(([o]) => dist(o, p) < 0.01).map(([o, nw]) => sub(nw, o)));
+    // a corner this room shares with a room nobody is moving stays put; that pins the room
+    const pins: [Pt, Pt][] = x.pts
+      .filter((p) => !pairs.some(([o]) => dist(o, p) < 0.01))
+      .filter((p) => job.rooms.some((y) => y.id !== id && !seen.has(y.id) && y.pts.some((q) => dist(q, p) < 0.01)))
+      .map((p) => [p, p]);
+    const all2 = [...pairs, ...pins];
+    const ds = x.pts.flatMap((p) => all2.filter(([o]) => dist(o, p) < 0.01).slice(0, 1).map(([o, nw]) => sub(nw, o)));
     const d0 = ds[0];
     const rigid = ds.every((d) => dist(d, d0) < 1e-6);
+    let own: [Pt, Pt][];
     if (rigid) {
       shift.set(id, d0);
-      const own: [Pt, Pt][] = x.pts.map((p) => [p, add(p, d0)]);
-      for (const y of touchers(own, seen)) {
+      own = x.pts.map((p) => [p, add(p, d0)]);
+    } else {
+      const np = followSquare(x, all2);
+      // a room that would fold over itself (a wall flipping round or shrinking to nothing) is
+      // left where it was rather than turned inside out
+      const m = np.length;
+      const folds = np.some((p, i) => {
+        if (!x.closed && i === m - 1) return false;
+        const q = np[(i + 1) % m],
+          o1 = x.pts[i],
+          o2 = x.pts[(i + 1) % m];
+        const e = sub(q, p),
+          eo = sub(o2, o1);
+        return e.x * eo.x + e.y * eo.y <= 0 || Math.hypot(e.x, e.y) < GRID * 0.5;
+      });
+      if (folds) continue;
+      bent.set(id, np);
+      own = x.pts.map((p, i) => [p, np[i]]);
+    }
+    if (own.some(([o, nw]) => dist(o, nw) > 1e-6))
+      for (const y of touchers(own.filter(([o, nw]) => dist(o, nw) > 1e-6), seen)) {
         seen.add(y.id);
         queue.push({ id: y.id, pairs: own });
       }
-    } else {
-      bent.set(id, followSquare(x, pairs));
-    }
   }
   const r3 = (p: Pt) => ({ x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 });
   return {
