@@ -1,26 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MousePointer2, PenLine, Square, DoorOpen, AppWindow, Undo2, Redo2, Maximize, Menu, ChevronDown, CircleHelp } from 'lucide-react';
+import { MousePointer2, PenLine, SquarePlus, DoorOpen, AppWindow, Undo2, Redo2, Maximize, Menu, ChevronDown, CircleHelp } from 'lucide-react';
 import type { Job, Selection, Tool } from './types';
 import PlanCanvas, { type View } from './PlanCanvas';
-import { OpeningSheet, RoomSheet, WallSheet } from './Sheets';
+import { AddRoomSheet, OpeningSheet, RoomSheet, WallSheet } from './Sheets';
 import Materials from './Materials';
 import Jobs from './Jobs';
-import { loadCurrent, loadJobs, markWelcome, newJob, sampleJob, saveCurrent, saveJobs, seenWelcome, wipeAll } from './store';
+import { loadCurrent, loadJobs, markWelcome, newJob, newRoom, sampleJob, saveCurrent, saveJobs, seenWelcome, wipeAll } from './store';
 import Welcome from './Welcome';
-import { bounds, isVerified, wallCount, wallEnds, lerp } from './geometry';
+import { bounds, isVerified, wallCount, wallEnds, lerp, roomBySize } from './geometry';
+import { fmtFtIn } from './units';
 import { estimate } from './estimate';
 
-const TOOLS: { t: Tool; icon: typeof PenLine; label: string }[] = [
+const TOOLS: { t: Tool | 'add'; icon: typeof PenLine; label: string }[] = [
   { t: 'select', icon: MousePointer2, label: 'Select' },
-  { t: 'draw', icon: PenLine, label: 'Draw' },
-  { t: 'rect', icon: Square, label: 'Box' },
+  { t: 'add', icon: SquarePlus, label: 'Room' },
+  { t: 'draw', icon: PenLine, label: 'Sketch' },
   { t: 'door', icon: DoorOpen, label: 'Door' },
   { t: 'window', icon: AppWindow, label: 'Window' },
 ];
 
 const HINTS: Record<Tool, string> = {
   select: 'Tap a wall to measure it. Drag a corner to move it.',
-  draw: 'Draw with one finger. Lines snap straight and square.',
+  draw: 'Sketch a room with one finger. Lines snap straight and square. Two fingers move and zoom.',
   rect: 'Drag corner to corner for a square room. Start on a corner to attach it.',
   door: 'Tap a wall to add a door.',
   window: 'Tap a wall to add a window.',
@@ -42,11 +43,12 @@ export default function App() {
   const jobRef = useRef(job);
   jobRef.current = job;
 
-  const [tool, setTool] = useState<Tool>(job.rooms.length ? 'select' : 'draw');
+  const [tool, setTool] = useState<Tool>('select');
+  const [adding, setAdding] = useState(false);
   const [sel, setSel] = useState<Selection>(null);
   const [tab, setTab] = useState<'plan' | 'list'>('plan');
   const [drawer, setDrawer] = useState(false);
-  const [allow45, setAllow45] = useState(true);
+  const [allow45, setAllow45] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [welcome, setWelcome] = useState(() => !seenWelcome() && !init.jobs.some((j) => j.rooms.length));
   const hist = useRef<Record<string, { past: Job[]; future: Job[] }>>({});
@@ -119,6 +121,7 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (drawer) setDrawer(false);
+        else if (adding) setAdding(false);
         else if (sel) setSel(null);
         return;
       }
@@ -201,8 +204,23 @@ export default function App() {
     setSel(null);
     setDrawer(false);
     setTab('plan');
-    const j = jobs.find((x) => x.id === id);
-    setTool(j && j.rooms.length ? 'select' : 'draw');
+    setTool('select');
+    setAdding(false);
+  };
+
+  const addRoom = (name: string, L: number, W: number) => {
+    const j0 = jobRef.current;
+    const taken = new Set(j0.rooms.map((r) => r.name));
+    let nm = name;
+    for (let i = 2; taken.has(nm); i++) nm = `${name} ${i}`;
+    const room = newRoom(nm, roomBySize(j0, L, W), true);
+    room.walls = room.walls.map((w, i) => ({ ...w, lengthIn: i % 2 === 0 ? L : W }));
+    commit((j) => ({ ...j, rooms: [...j.rooms, room], inPerUnit: j.scaleSet ? j.inPerUnit : 1, scaleSet: true }));
+    setAdding(false);
+    setTool('select');
+    setSel(null);
+    fit();
+    toast(`${nm} added, ${fmtFtIn(L)} by ${fmtFtIn(W)}. Tap a wall to add a door.`);
   };
 
   const selRoom = sel && sel.kind !== 'opening' ? job.rooms.find((r) => r.id === sel.room) : null;
@@ -246,7 +264,20 @@ export default function App() {
             </button>
           </div>
 
-          {!sel && (
+          {!sel && !adding && job.rooms.length === 0 && tool === 'select' && (
+            <div className="first-room" role="region" aria-label="Add the first room">
+              <h2>Add the first room</h2>
+              <p>Pull the tape wall to wall, then type the length and width. Doors and windows go on after.</p>
+              <button className="btn primary full" onClick={() => setAdding(true)}>
+                <SquarePlus size={18} /> Type its size
+              </button>
+              <button className="btn full ghost" onClick={() => setTool('draw')}>
+                <PenLine size={18} /> Sketch an odd shape instead
+              </button>
+            </div>
+          )}
+
+          {!sel && !adding && (
             <div className="hintbar" aria-live="polite">
               {job.rooms.length > 0 && tool === 'select' ? (
                 <>
@@ -282,7 +313,7 @@ export default function App() {
                 </>
               ) : (
                 <>
-                  <span className="strip-hint">{job.rooms.length === 0 && (tool === 'draw' || tool === 'select') ? 'Draw your first room with one finger. Two fingers move and zoom.' : HINTS[tool]}</span>
+                  <span className="strip-hint">{job.rooms.length === 0 && tool === 'select' ? 'Two fingers move and zoom the plan.' : HINTS[tool]}</span>
                   {(tool === 'draw' || tool === 'rect') && (
                     <button className={`mini ${allow45 ? 'on' : ''}`} onClick={() => setAllow45(!allow45)} aria-pressed={allow45} aria-label="Allow 45 degree walls">
                       45°
@@ -295,7 +326,21 @@ export default function App() {
 
           <nav className="toolbar" aria-label="Drawing tools">
             {TOOLS.map(({ t, icon: Icon, label }) => (
-              <button key={t} className={`tool ${tool === t ? 'on' : ''}`} onClick={() => setTool(t)} aria-label={label} aria-pressed={tool === t}>
+              <button
+                key={t}
+                className={`tool ${(t === 'add' ? adding : tool === t && !adding) ? 'on' : ''}`}
+                onClick={() => {
+                  if (t === 'add') {
+                    setSel(null);
+                    setAdding(true);
+                  } else {
+                    setAdding(false);
+                    setTool(t);
+                  }
+                }}
+                aria-label={t === 'add' ? 'Add a room by its size' : label}
+                aria-pressed={t === 'add' ? adding : tool === t && !adding}
+              >
                 <Icon size={22} strokeWidth={2.1} />
                 <span>{label}</span>
               </button>
@@ -328,6 +373,17 @@ export default function App() {
               }}
             />
           )}
+          {adding && (
+            <AddRoomSheet
+              defaultName={`Room ${job.rooms.filter((r) => r.closed).length + 1}`}
+              onAdd={addRoom}
+              onSketch={() => {
+                setAdding(false);
+                setTool('draw');
+              }}
+              onClose={() => setAdding(false)}
+            />
+          )}
           {selOpening && <OpeningSheet job={job} o={selOpening} commit={commit} onClose={() => setSel(null)} />}
         </div>
       ) : (
@@ -358,7 +414,7 @@ export default function App() {
             setJobs((js) => [...js, j]);
             setCurId(j.id);
             setSel(null);
-            setTool('draw');
+            setTool('select');
             setTab('plan');
             setDrawer(false);
           }}
@@ -407,7 +463,7 @@ export default function App() {
             markWelcome();
             setWelcome(false);
             setTab('plan');
-            if (!job.rooms.length) setTool('draw');
+            if (!job.rooms.length) setTool('select');
           }}
           onSample={() => {
             markWelcome();

@@ -1,8 +1,8 @@
 import { ShieldCheck } from 'lucide-react';
 
 const STEPS = [
-  { title: 'Draw the room', body: 'One finger. Lines snap straight and square. Start on a corner to attach the next room.' },
-  { title: 'Tap a wall, type the tape', body: 'Your first number sets the scale. Each wall you measure turns into yellow tape.' },
+  { title: 'Add the rooms', body: 'Pull the tape and type the length and width. Odd shapes you can sketch with one finger.' },
+  { title: 'Put in the doors and windows', body: 'Tap a wall, then Door or Window. Every measured wall turns into yellow tape.' },
   { title: 'Take the list to the store', body: 'Sticks and cuts, caulk, nails, paint, flooring and tile, in the sizes the store sells.' },
 ];
 
@@ -67,7 +67,7 @@ export default function Welcome({ onStart, onSample }: { onStart: () => void; on
         </div>
         <PlanSketch />
         <h1 id="welcome-title">Measure once. Buy once.</h1>
-        <p className="welcome-lede">Sketch the job on your phone, tap each wall to type the tape, and walk into the store with the exact list.</p>
+        <p className="welcome-lede">Type each room’s size, tap in the doors, and walk into the store with the exact list.</p>
         <ol className="steps">
           {STEPS.map(({ title, body }, i) => (
             <li key={title}>

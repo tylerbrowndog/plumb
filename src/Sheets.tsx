@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, DoorOpen, AppWindow, Trash2, Ruler, Check, Scale, Delete, X, RectangleHorizontal } from 'lucide-react';
 import type { FloorType, Job, Opening, OpeningType, Room } from './types';
-import { dist, drawnLen, isVerified, uid, wallCount, wallEnds, wallLenIn } from './geometry';
+import { dist, drawnLen, isSquareRoom, isVerified, reshapeWall, uid, wallCount, wallEnds, wallLenIn } from './geometry';
 import { fmtFtIn, parseLength } from './units';
 
 type Commit = (fn: (j: Job) => Job) => void;
@@ -65,6 +65,16 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
       };
       const dl = drawnLen(room, wall);
       if ((setScale || !j.scaleSet) && dl > 0) nj = { ...nj, inPerUnit: inches / dl, scaleSet: true };
+      // a square room has two pairs of equal walls: measuring one fills in the one across from it
+      const square = isSquareRoom(room);
+      const across = (wall + 2) % 4;
+      nj = reshapeWall(nj, room.id, wall, inches);
+      if (square && !isVerified(room, across))
+        nj = updRoom(nj, room.id, (r) => {
+          const walls = r.walls.slice();
+          walls[across] = { ...walls[across], lengthIn: inches };
+          return { ...r, walls };
+        });
       nextJob = nj;
       return nj;
     });
@@ -374,6 +384,77 @@ export function OpeningSheet({ job, o, commit, onClose }: { job: Job; o: Opening
         </button>
       </div>
       <div className="hint-small">Drag the blue dot on the plan to slide it along the wall.</div>
+    </div>
+  );
+}
+
+// ---------------- Add a room by typing its size ----------------
+const ROOM_NAMES = ['Bedroom', 'Bath', 'Kitchen', 'Living', 'Hall', 'Closet'];
+const PAD_KEYS = ['7', '8', '9', "'", '4', '5', '6', '"', '1', '2', '3', '/', ' ', '0', '.', 'del'];
+const PAD_NAMES: Record<string, string | undefined> = { "'": 'feet', '"': 'inches', '/': 'fraction', ' ': 'space', '.': 'decimal point', del: 'Delete last character' };
+
+export function AddRoomSheet({ defaultName, onAdd, onSketch, onClose }: { defaultName: string; onAdd: (name: string, lengthIn: number, widthIn: number) => void; onSketch: () => void; onClose: () => void }) {
+  const [field, setField] = useState<0 | 1>(0);
+  const [txt, setTxt] = useState<[string, string]>(['', '']);
+  const [name, setName] = useState(defaultName);
+  const vals = [parseLength(txt[0]), parseLength(txt[1])];
+  const cur = txt[field];
+  const key = (k: string) =>
+    setTxt((t) => {
+      const n = t.slice() as [string, string];
+      n[field] = k === 'del' ? n[field].slice(0, -1) : (n[field] + k).replace(/\s{2,}/g, ' ');
+      return n;
+    });
+  const ready = vals[0] != null && vals[1] != null;
+  const label = ['Length', 'Width'];
+  return (
+    <div className="sheet wall-sheet add-sheet" role="region" aria-label="Add a room by its size">
+      <div className="sheet-head">
+        <div className="sheet-title">
+          <div className="eyebrow">New room</div>
+          <div className="h2">Type the room’s size</div>
+        </div>
+        <button className="icon-btn close" onClick={onClose} aria-label="Close">
+          <X size={20} />
+        </button>
+      </div>
+      <div className="size-fields">
+        {([0, 1] as const).map((i) => (
+          <button key={i} className={`size-field ${field === i ? 'on' : ''} ${txt[i] && vals[i] == null ? 'bad' : ''}`} onClick={() => setField(i)} aria-pressed={field === i}>
+            <span className="size-label">{label[i]}</span>
+            <span className="size-val">{txt[i] ? (vals[i] != null ? fmtFtIn(vals[i]!) : txt[i]) : <span className="muted">tap to type</span>}</span>
+          </button>
+        ))}
+      </div>
+      <div className="sub add-sub">{cur && vals[field] == null ? <span className="bad-msg">Not a length yet. Try 12 6 or 12' 6 1/2"</span> : field === 0 ? 'Wall to wall the long way. 12 means 12 feet.' : 'Wall to wall the short way.'}</div>
+      <div className="keypad">
+        {PAD_KEYS.map((k) => (
+          <button key={k} className={`key ${/\d/.test(k) ? 'num' : 'sym'}`} onClick={() => key(k)} aria-label={PAD_NAMES[k]}>
+            {k === 'del' ? <Delete size={20} /> : k === ' ' ? 'space' : k === "'" ? "ft '" : k === '"' ? 'in "' : k}
+          </button>
+        ))}
+      </div>
+      <div className="row gap">
+        <button className="btn ghost" onClick={onSketch}>
+          Sketch it instead
+        </button>
+        {field === 0 && !ready ? (
+          <button className="btn primary grow" disabled={vals[0] == null} onClick={() => setField(1)}>
+            Next: width
+          </button>
+        ) : (
+          <button className="btn primary grow" disabled={!ready} onClick={() => ready && onAdd(name.trim() || defaultName, vals[0]!, vals[1]!)}>
+            <Check size={18} /> Add room
+          </button>
+        )}
+      </div>
+      <div className="chips" role="group" aria-label="Room name">
+        {ROOM_NAMES.map((nm) => (
+          <button key={nm} className={`chip ${name === nm ? 'on' : ''}`} onClick={() => setName(name === nm ? defaultName : nm)} aria-pressed={name === nm}>
+            {name === nm && <Check size={15} />} {nm}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

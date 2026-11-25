@@ -154,7 +154,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
       }
       // walls
       let bw: { room: string; wall: number } | null = null;
-      let bwd = 16 / view.k;
+      let bwd = 22 / view.k;
       for (const r of shown.rooms) {
         for (let i = 0; i < wallCount(r); i++) {
           const [a, b] = wallEnds(r, i);
@@ -327,7 +327,9 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           const name = rec.closed ? `Room ${job.rooms.filter((r) => r.closed).length + 1}` : `Wall run ${job.rooms.filter((r) => !r.closed).length + 1}`;
           const room = newRoom(name, rec.pts, rec.closed);
           commit((j) => ({ ...j, rooms: [...j.rooms, room] }));
-          setSel({ kind: 'room', room: room.id });
+          // straight to the tape: measure the first wall of what was just drawn
+          setTool('select');
+          setSel({ kind: 'wall', room: room.id, wall: 0 });
         }
       }
     } else if (gs.type === 'rect') {
@@ -337,7 +339,8 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
         if (Math.abs(pts[0].x - pts[2].x) > 0 && Math.abs(pts[0].y - pts[2].y) > 0) {
           const room = newRoom(`Room ${job.rooms.filter((r) => r.closed).length + 1}`, pts, true);
           commit((j) => ({ ...j, rooms: [...j.rooms, room] }));
-          setSel({ kind: 'room', room: room.id });
+          setTool('select');
+          setSel({ kind: 'wall', room: room.id, wall: 0 });
         }
       }
     } else if (gs.type === 'place') {

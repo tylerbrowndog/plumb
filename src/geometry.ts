@@ -370,3 +370,129 @@ export function roomAreaIn2(job: Job, r: Room) {
   const f = drawn > 0 ? real / drawn : 1;
   return Math.abs(signedArea(r.pts)) * job.inPerUnit * job.inPerUnit * f * f;
 }
+
+/** true when every wall runs straight across or straight up the page */
+export function isSquareRoom(r: Room) {
+  if (!r.closed || r.pts.length !== 4) return false;
+  for (let i = 0; i < 4; i++) {
+    const [a, b] = wallEnds(r, i);
+    if (Math.abs(a.x - b.x) > 1e-6 && Math.abs(a.y - b.y) > 1e-6) return false;
+  }
+  return true;
+}
+
+/**
+ * Make the drawing follow a typed length: stretch the wall and give the difference to a
+ * parallel wall on the other side that is still unmeasured, so the room stays closed and square.
+ * Corners shared with other rooms move with it. Returns the job unchanged when it can't do this cleanly.
+ */
+export function reshapeWall(job: Job, roomId: string, wall: number, inches: number): Job {
+  const r = job.rooms.find((x) => x.id === roomId);
+  if (!r || wall >= wallCount(r) || !(job.inPerUnit > 0)) return job;
+  const n = wallCount(r);
+  const edges: Pt[] = [];
+  for (let i = 0; i < n; i++) {
+    const [a, b] = wallEnds(r, i);
+    edges.push(sub(b, a));
+  }
+  const L = Math.hypot(edges[wall].x, edges[wall].y);
+  if (L < 1e-6) return job;
+  const dir = mul(edges[wall], 1 / L);
+  const u = inches / job.inPerUnit;
+  const delta = u - L;
+  if (Math.abs(delta) < 1e-3) return job;
+  edges[wall] = mul(dir, u);
+  if (r.closed) {
+    const straight = Math.abs(dir.x) < 1e-6 || Math.abs(dir.y) < 1e-6;
+    if (!straight) return job;
+    let best = -1,
+      bestLen = 0;
+    for (let j = 0; j < n; j++) {
+      if (j === wall || isVerified(r, j)) continue;
+      const lj = Math.hypot(edges[j].x, edges[j].y);
+      if (lj < 1e-6) continue;
+      const dot = (edges[j].x * dir.x + edges[j].y * dir.y) / lj;
+      if (dot > -0.999) continue;
+      if ((lj + delta) * job.inPerUnit < 3) continue;
+      if (lj > bestLen) {
+        bestLen = lj;
+        best = j;
+      }
+    }
+    if (best < 0) return job;
+    edges[best] = mul(edges[best], (bestLen + delta) / bestLen);
+  }
+  const pts: Pt[] = [r.pts[0]];
+  const count = r.closed ? r.pts.length - 1 : n;
+  for (let i = 0; i < count; i++) {
+    const p = add(pts[i], edges[i]);
+    pts.push({ x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 });
+  }
+  const moves: [Pt, Pt][] = [];
+  r.pts.forEach((p, i) => {
+    if (dist(p, pts[i]) > 1e-6) moves.push([p, pts[i]]);
+  });
+  // rooms attached to the moved corners slide along with them, staying the same size,
+  // and anything attached to those slides too. A room pinned by corners that moved
+  // different ways just has those corners moved.
+  const shift = new Map<string, Pt>();
+  const bent = new Map<string, Pt[]>();
+  const queue: { id: string; pairs: [Pt, Pt][] }[] = [];
+  const touchers = (pairs: [Pt, Pt][], skip: Set<string>) =>
+    job.rooms.filter((x) => !skip.has(x.id) && x.pts.some((p) => pairs.some(([o]) => dist(o, p) < 0.01)));
+  const seen = new Set<string>([r.id]);
+  for (const x of touchers(moves, seen)) {
+    seen.add(x.id);
+    queue.push({ id: x.id, pairs: moves });
+  }
+  while (queue.length) {
+    const { id, pairs } = queue.shift()!;
+    const x = job.rooms.find((q) => q.id === id)!;
+    const ds = x.pts.flatMap((p) => pairs.filter(([o]) => dist(o, p) < 0.01).map(([o, nw]) => sub(nw, o)));
+    const d0 = ds[0];
+    const rigid = ds.every((d) => dist(d, d0) < 1e-6);
+    if (rigid) {
+      shift.set(id, d0);
+      const own: [Pt, Pt][] = x.pts.map((p) => [p, add(p, d0)]);
+      for (const y of touchers(own, seen)) {
+        seen.add(y.id);
+        queue.push({ id: y.id, pairs: own });
+      }
+    } else {
+      bent.set(
+        id,
+        x.pts.map((p) => {
+          const m = pairs.find(([o]) => dist(o, p) < 0.01);
+          return m ? { ...m[1] } : p;
+        }),
+      );
+    }
+  }
+  const r3 = (p: Pt) => ({ x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 });
+  return {
+    ...job,
+    rooms: job.rooms.map((x) => {
+      if (x.id === r.id) return { ...x, pts };
+      const d = shift.get(x.id);
+      if (d) return { ...x, pts: x.pts.map((p) => r3(add(p, d))) };
+      const b = bent.get(x.id);
+      return b ? { ...x, pts: b } : x;
+    }),
+  };
+}
+
+/** a square room of a typed size, placed to the right of what's already drawn */
+export function roomBySize(job: Job, lengthIn: number, widthIn: number): Pt[] {
+  const k = job.scaleSet && job.inPerUnit > 0 ? job.inPerUnit : 1;
+  const w = lengthIn / k,
+    h = widthIn / k;
+  const b = bounds(job);
+  const x0 = b ? snapN(b.maxX + 36 / k) : 0;
+  const y0 = b ? b.minY : 0;
+  return [
+    { x: x0, y: y0 },
+    { x: x0 + w, y: y0 },
+    { x: x0 + w, y: y0 + h },
+    { x: x0, y: y0 + h },
+  ];
+}
