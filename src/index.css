@@ -167,7 +167,8 @@ input:focus-visible {
 }
 /* on the dark case, the focus ring turns tape yellow so it still shows */
 .top :focus-visible,
-.toolbar :focus-visible,
+.rail :focus-visible,
+.tapebar :focus-visible,
 .act-bar :focus-visible {
   outline-color: var(--tape);
 }
@@ -304,23 +305,24 @@ a {
   font-weight: 600;
 }
 
-/* tools sit in a dock at the bottom, where the thumb already is */
-.toolbar {
+/* tools live in a rail down the left edge, so the whole page below them is plan */
+.rail {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: calc(var(--dock-h) + var(--safe-b));
-  padding: 6px 8px var(--safe-b);
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
+  left: 8px;
+  top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px;
   background: var(--case);
+  border-radius: 14px;
+  box-shadow: 0 4px 14px rgba(20, 23, 18, 0.22);
   z-index: 3;
 }
 .tool {
-  height: 56px;
-  border-radius: 12px;
+  width: 54px;
+  height: 50px;
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -329,16 +331,17 @@ a {
   color: var(--case-muted);
 }
 .tool span {
-  font-size: 12.5px;
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.01em;
 }
 .tool:active {
   background: var(--case-2);
 }
 .tool.on {
   background: var(--case-2);
-  color: var(--case-text);
-  box-shadow: inset 0 -3px 0 var(--tape);
+  color: var(--tape);
+  box-shadow: inset 3px 0 0 var(--tape);
 }
 
 .view-ctl {
@@ -372,8 +375,9 @@ a {
   position: absolute;
   left: 10px;
   right: 10px;
-  bottom: calc(var(--dock-h) + var(--safe-b) + 10px);
+  bottom: calc(var(--safe-b) + 10px);
   min-height: 60px;
+  box-shadow: 0 4px 14px rgba(20, 23, 18, 0.14);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1524,124 +1528,213 @@ a {
   margin-top: -4px;
 }
 
-/* ---------- empty plan: the first room ---------- */
-.first-room {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  top: 50%;
-  transform: translateY(-58%);
-  margin: 0 auto;
-  max-width: 360px;
-  z-index: 3;
-  background: var(--sheet);
-  border: 1px solid var(--hair-strong);
-  border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(34, 39, 31, 0.16);
-  padding: 18px 16px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.first-room h2 {
-  font-family: var(--display);
-  font-size: 26px;
-  font-weight: 700;
-  line-height: 1.1;
-  margin: 0;
-}
-.first-room p {
-  margin: 0;
-  color: var(--pencil);
-  font-size: 15px;
-  line-height: 1.4;
-}
 
-/* ---------- tape strip: lengths waiting to go on a wall ---------- */
-.tray {
+/* ---------- the tape bar: a slim keypad in the tape-case colours ----------
+   It takes the bottom quarter, never more, so the wall you're on stays in view above it. */
+.tapebar {
   position: absolute;
-  right: 10px;
-  top: 172px;
-  bottom: calc(var(--dock-h) + var(--safe-b) + 84px);
-  width: 76px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 3;
-  pointer-events: none;
-}
-.tray > * {
-  pointer-events: auto;
-}
-.tray-add {
-  height: 56px;
-  border-radius: 12px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 6px 8px calc(var(--safe-b) + 8px);
   background: var(--case);
-  color: var(--tape);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  font-size: 13px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-.tray-add span {
   color: var(--case-text);
-}
-.tray-add:active,
-.tray-add.on {
-  background: #2d3329;
-}
-.tray-list {
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -6px 22px rgba(20, 23, 18, 0.25);
+  z-index: 4;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  overflow-y: auto;
-  min-height: 0;
-  padding: 2px;
-  scrollbar-width: none;
+  animation: up 0.16s ease-out;
 }
-.tag {
-  min-height: 44px;
-  width: 100%;
-  padding: 0 4px;
-  border-radius: 4px;
-  background: var(--tape) repeating-linear-gradient(90deg, rgba(34, 39, 31, 0.45) 0 1px, transparent 1px 6px) top / 100% 5px no-repeat;
-  background-color: var(--tape);
-  border: 1.5px solid var(--tape-edge);
-  color: var(--tape-ink);
-  font-family: var(--display);
-  font-size: 18px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+.tb-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 52px;
+}
+.tb-nav {
+  width: 40px;
+  height: 44px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
-  touch-action: none;
+  color: var(--case-text);
   flex-shrink: 0;
-  box-shadow: 0 2px 0 var(--tape-edge);
 }
-.tag.armed {
-  outline: 3px solid var(--chalk);
-  outline-offset: 2px;
+.tb-nav:active {
+  background: var(--case-2);
 }
-.tag.lifted {
-  opacity: 0.35;
+.tb-nav.close {
+  color: var(--case-muted);
 }
-.tag.ghost {
-  position: fixed;
-  width: auto;
-  min-width: 76px;
-  padding: 0 10px;
-  transform: translate(-50%, -150%) rotate(-3deg);
-  pointer-events: none;
-  z-index: 40;
-  box-shadow: 0 10px 24px rgba(20, 23, 18, 0.35);
+.tb-read {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+.tb-where {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--case-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.tapebar .bad-msg {
+  color: #ff9a8f;
+}
+.tb-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 194, 14, 0.16);
+  color: var(--tape);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.tb-len {
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  min-height: 33px;
+}
+.tb-len.est {
+  color: var(--case-muted);
+}
+.tb-len.ok {
+  color: var(--tape);
+}
+.tb-len.typed {
+  color: #fff;
+}
+.tb-len.bad {
+  color: #ff9a8f;
+}
+
+/* one row of digits like a phone keyboard, then units and the go key */
+.tpad {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  grid-auto-rows: 46px;
+  gap: 4px;
+}
+.tk {
+  min-width: 0;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.tk.num {
+  background: var(--case-2);
+  color: var(--case-text);
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 600;
+  border-bottom: 2px solid #121510;
+}
+.tk.sym {
+  border: 1px solid rgba(238, 241, 232, 0.2);
+  color: #a9c4ff;
+  font-size: 14px;
+  font-weight: 700;
+}
+.tk.wide2 {
+  grid-column: span 2;
+}
+.tk.go {
+  grid-column: span 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: var(--tape);
+  color: var(--tape-ink);
+  font-family: var(--display);
+  font-size: 16.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  padding: 0 6px;
+}
+.tk.go:disabled {
+  opacity: 0.4;
+}
+.tk:active:not(:disabled) {
+  transform: translateY(1px);
+  filter: brightness(0.92);
+}
+.tb-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tb-chips::-webkit-scrollbar {
+  display: none;
+}
+.tapebar .chip.sm {
+  min-height: 36px;
+  padding: 0 11px;
+  font-size: 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: var(--case-text);
+  border: 1px solid rgba(238, 241, 232, 0.24);
+}
+.tapebar .chip.sm:active {
+  background: var(--case-2);
+}
+.tapebar .chip.sm.on {
+  background: rgba(255, 194, 14, 0.14);
+  border-color: var(--tape);
+  color: var(--tape);
+}
+.tb-note {
+  font-size: 12.5px;
+  color: var(--case-muted);
+  padding: 0 4px;
+}
+
+/* adding a room: length and width sit side by side in the head */
+.tb-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 4px 10px;
+  min-height: 52px;
+  border-radius: 10px;
+  border: 1.5px dashed rgba(238, 241, 232, 0.28);
+  text-align: left;
+  color: var(--case-text);
+}
+.tb-field.on {
+  border: 2px solid var(--tape);
+}
+.tb-field.bad {
+  border-color: #ff9a8f;
+}
+.tb-field .tb-len {
+  font-size: 24px;
+  min-height: 27px;
+}
+.tb-field .muted {
+  color: var(--case-muted);
+  font-family: var(--text);
+  font-size: 14px;
+  font-weight: 600;
 }
 @media (prefers-reduced-motion: reduce) {
-  .tag.ghost {
-    transform: translate(-50%, -150%);
+  .tapebar {
+    animation: none;
   }
 }

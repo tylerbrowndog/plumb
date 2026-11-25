@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, DoorOpen, AppWindow, Trash2, Ruler, Check, Scale, Delete, X, RectangleHorizontal } from 'lucide-react';
+import type React from 'react';
 import type { FloorType, Job, Opening, OpeningType, Room } from './types';
 import { isVerified, uid, wallCount, wallLenIn } from './geometry';
 import { fmtFtIn, parseLength } from './units';
@@ -11,17 +12,77 @@ function updRoom(j: Job, id: string, fn: (r: Room) => Room): Job {
   return { ...j, rooms: j.rooms.map((r) => (r.id === id ? fn(r) : r)) };
 }
 
-// ---------------- Wall sheet with tape keypad ----------------
+// ---------------- Tape bar: a slim keypad that leaves the plan in view ----------------
+const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+const KEY_NAMES: Record<string, string | undefined> = { "'": 'feet', '"': 'inches', '/': 'fraction', ' ': 'space', del: 'Delete last character' };
+
+/** typing on a real keyboard works too */
+function usePhysicalKeys(onKey: (k: string) => void, onEnter: () => void) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (/^[0-9'"/ .]$/.test(e.key)) {
+        e.preventDefault();
+        onKey(e.key);
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        onKey('del');
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        onEnter();
+      }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  });
+}
+
+function TapePad({ onKey, confirm, onConfirm, confirmDisabled, confirmLabel }: { onKey: (k: string) => void; confirm: React.ReactNode; onConfirm: () => void; confirmDisabled?: boolean; confirmLabel?: string }) {
+  return (
+    <div className="tpad">
+      {DIGITS.map((k) => (
+        <button key={k} className="tk num" onClick={() => onKey(k)}>
+          {k}
+        </button>
+      ))}
+      <button className="tk sym" onClick={() => onKey("'")} aria-label={KEY_NAMES["'"]}>
+        ft
+      </button>
+      <button className="tk sym" onClick={() => onKey('"')} aria-label={KEY_NAMES['"']}>
+        in
+      </button>
+      <button className="tk sym" onClick={() => onKey('/')} aria-label={KEY_NAMES['/']}>
+        /
+      </button>
+      <button className="tk sym wide2" onClick={() => onKey(' ')} aria-label={KEY_NAMES[' ']}>
+        space
+      </button>
+      <button className="tk sym" onClick={() => onKey('del')} aria-label={KEY_NAMES.del}>
+        <Delete size={18} />
+      </button>
+      <button className="tk go" onClick={onConfirm} disabled={confirmDisabled} aria-label={confirmLabel}>
+        {confirm}
+      </button>
+    </div>
+  );
+}
+
+const typeKey = (t: string, k: string) => (k === 'del' ? t.slice(0, -1) : (t + k).replace(/\s{2,}/g, ' ').replace(/^\s+/, ''));
+
 export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { job: Job; room: Room; wall: number; commit: Commit; onSelectWall: (room: string, wall: number) => void; onClose: () => void }) {
   const [txt, setTxt] = useState('');
+  const [more, setMore] = useState(false);
   useEffect(() => setTxt(''), [room.id, wall]);
   const n = wallCount(room);
   const len = wallLenIn(job, room, wall);
   const verified = isVerified(room, wall);
   const parsed = parseLength(txt);
   const w = room.walls[wall] ?? {};
+  const onWall = job.openings.filter((o) => o.room === room.id && o.wall === wall).length;
 
-  // unverified walls across the whole job, in order
+  // every wall in the job, in drawing order: the bar walks around each room
   const order: { room: string; wall: number }[] = [];
   for (const r of job.rooms) for (let i = 0; i < wallCount(r); i++) order.push({ room: r.id, wall: i });
   const idx = order.findIndex((o) => o.room === room.id && o.wall === wall);
@@ -32,8 +93,8 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
   const nextUnverified = (j: Job) => {
     for (let s = 1; s <= order.length; s++) {
       const o = order[(idx + s) % order.length];
-      const r = j.rooms.find((x) => x.id === o.room)!;
-      if (!isVerified(r, o.wall)) return o;
+      const r = j.rooms.find((x) => x.id === o.room);
+      if (r && !isVerified(r, o.wall)) return o;
     }
     return null;
   };
@@ -50,118 +111,113 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
     else onClose();
   };
 
-  const confirmEstimate = () => save(Math.round(len * 8) / 8, false);
-
-  const key = (k: string) => {
-    if (k === 'del') setTxt((t) => t.slice(0, -1));
-    else if (k === 'clr') setTxt('');
-    else setTxt((t) => (t + k).replace(/\s{2,}/g, ' '));
+  const canEstimate = job.scaleSet;
+  const confirm = () => {
+    if (txt) {
+      if (parsed != null && parsed > 0) save(parsed, false);
+    } else if (verified) {
+      const nx = nextUnverified(job);
+      if (nx) onSelectWall(nx.room, nx.wall);
+      else go(1);
+    } else if (canEstimate) save(Math.round(len * 8) / 8, false);
   };
+  const key = (k: string) => setTxt((t) => typeKey(t, k));
+  usePhysicalKeys(key, confirm);
 
-  const KEY_NAMES: Record<string, string | undefined> = { "'": 'feet', '"': 'inches', '/': 'fraction', ' ': 'space', '.': 'decimal point', del: 'Delete last character' };
-  const keys = ['7', '8', '9', "'", '4', '5', '6', '"', '1', '2', '3', '/', ' ', '0', '.', 'del'];
+  const goLabel = txt ? 'Save' : verified ? 'Next' : canEstimate ? `Use ~${fmtFtIn(len)}` : 'Save';
+  const toggleNoBase = () =>
+    commit((j) =>
+      updRoom(j, room.id, (r) => {
+        const walls = r.walls.slice();
+        walls[wall] = { ...walls[wall], noBase: !walls[wall]?.noBase };
+        return { ...r, walls };
+      }),
+    );
 
   return (
-    <div className="sheet wall-sheet" role="region" aria-label={`Measure ${room.name}, wall ${wall + 1}`}>
-      <div className="sheet-head">
-        <button className="icon-btn" onClick={() => go(-1)} aria-label="Previous wall">
+    <div className="tapebar" role="region" aria-label={`Measure ${room.name}, wall ${wall + 1}`}>
+      <div className="tb-head">
+        <button className="tb-nav" onClick={() => go(-1)} aria-label="Previous wall">
           <ChevronLeft size={22} />
         </button>
-        <div className="sheet-title">
-          <div className="eyebrow">
-            {room.name}, wall {wall + 1} of {n}
-          </div>
-          <div aria-live="polite" className={`readout ${txt ? (parsed != null ? 'typed-ok' : 'typed-bad') : verified ? 'measured' : 'est'}`}>
-          <div className={`big-len ${verified ? 'ok' : ''}`}>
-            {txt ? (parsed != null ? fmtFtIn(parsed) : <span className="bad">{txt}</span>) : (verified ? '' : '~') + fmtFtIn(len)}
-          </div>
-          </div>
-          <div className="sub">{txt ? parsed != null ? <span className="typed">You typed {txt}</span> : <span className="bad-msg">Not a length yet. Try 12 6 or 12' 6 1/2"</span> : verified ? (w.predicted ? <span className="okc"><Check size={13} /> Worked out from the other walls. Type the tape to check it.</span> : <span className="okc"><Check size={13} /> Measured</span>) : job.scaleSet ? 'Estimated from your sketch. Type the tape.' : 'Type this wall’s tape length. It sets the scale for the whole job.'}</div>
+        <div className="tb-read" aria-live="polite">
+          <span className="tb-where">
+            {txt && parsed == null ? (
+              <span className="bad-msg">Try 12 6 or 12' 6 1/2"</span>
+            ) : (
+              <>
+                {room.name}, wall {wall + 1} of {n}
+                {!txt && verified && w.predicted ? <span className="tb-tag">worked out</span> : null}
+                {!txt && !verified && !canEstimate ? <span className="tb-tag">sets the scale</span> : null}
+              </>
+            )}
+          </span>
+          <span className={`tb-len ${txt ? (parsed != null ? 'typed' : 'bad') : verified ? 'ok' : 'est'}`}>
+            {txt ? (parsed != null ? fmtFtIn(parsed) : txt) : (verified ? '' : '~') + fmtFtIn(len)}
+          </span>
         </div>
-        <button className="icon-btn" onClick={() => go(1)} aria-label="Next wall">
+        <button className="tb-nav" onClick={() => go(1)} aria-label="Next wall">
           <ChevronRight size={22} />
         </button>
-        <button className="icon-btn close" onClick={onClose} aria-label="Close">
+        <button className="tb-nav close" onClick={onClose} aria-label="Close">
           <X size={20} />
         </button>
       </div>
 
-      <div className="keypad">
-        {keys.map((k) => (
-          <button key={k} className={`key ${/\d/.test(k) ? 'num' : 'sym'}`} onClick={() => key(k)} aria-label={KEY_NAMES[k]}>
-            {k === 'del' ? <Delete size={20} /> : k === ' ' ? 'space' : k === "'" ? 'ft' + " '" : k === '"' ? 'in "' : k}
-          </button>
-        ))}
+      <TapePad onKey={key} onConfirm={confirm} confirmDisabled={txt ? parsed == null || parsed <= 0 : !verified && !canEstimate} confirmLabel={goLabel} confirm={<><Check size={17} /> {goLabel}</>} />
+
+      <div className="tb-chips" role="group" aria-label="This wall">
+        <button className="chip sm" onClick={() => addOpening(job, room, wall, 'door', commit)}>
+          <DoorOpen size={15} /> Door
+        </button>
+        <button className="chip sm" onClick={() => addOpening(job, room, wall, 'window', commit)}>
+          <AppWindow size={15} /> Window
+        </button>
+        <button className="chip sm" onClick={() => addOpening(job, room, wall, 'opening', commit)}>
+          <RectangleHorizontal size={15} /> Opening
+        </button>
+        <button className={`chip sm ${w.noBase ? 'on' : ''}`} onClick={toggleNoBase} aria-pressed={!!w.noBase}>
+          {w.noBase ? <Check size={14} /> : null} No base
+        </button>
+        <button className={`chip sm ${more ? 'on' : ''}`} onClick={() => setMore(!more)} aria-expanded={more}>
+          More
+        </button>
       </div>
-      <div className="row gap">
-        {txt ? (
-          <>
-            <button className="btn ghost" onClick={() => key('clr')}>
-              Clear
+      {onWall > 0 && !more ? <div className="tb-note">{onWall === 1 ? '1 opening' : `${onWall} openings`} on this wall. Tap one on the plan to size it.</div> : null}
+      {more && (
+        <div className="tb-chips">
+          {txt && parsed ? (
+            <button className="chip sm" onClick={() => save(parsed, true)}>
+              <Scale size={14} /> Save and rescale
             </button>
-            <button className="btn primary grow" disabled={parsed == null || parsed <= 0} onClick={() => parsed && save(parsed, false)}>
-              <Check size={18} /> Save &amp; next wall
+          ) : verified && job.scaleSet ? (
+            <button className="chip sm" onClick={() => w.lengthIn && save(w.lengthIn, true)}>
+              <Scale size={14} /> Scale the drawing to this
             </button>
-          </>
-        ) : (
-          <button className="btn grow" onClick={confirmEstimate} disabled={!job.scaleSet}>
-            <Check size={18} /> {verified ? 'Looks right, next' : `Use ~${fmtFtIn(len)}`}
-          </button>
-        )}
-      </div>
-      <div className="chips" role="group" aria-label="Add to this wall">
-        <span className="chips-label">Add</span>
-        <button className="chip" onClick={() => addOpening(job, room, wall, 'door', commit)}>
-          <DoorOpen size={16} /> Door
-        </button>
-        <button className="chip" onClick={() => addOpening(job, room, wall, 'window', commit)}>
-          <AppWindow size={16} /> Window
-        </button>
-        <button className="chip" onClick={() => addOpening(job, room, wall, 'opening', commit)}>
-          <RectangleHorizontal size={16} /> Opening
-        </button>
-      </div>
-      <div className="chips">
-        <button
-          className={`chip ${w.noBase ? 'on' : ''}`}
-          onClick={() =>
-            commit((j) =>
-              updRoom(j, room.id, (r) => {
-                const walls = r.walls.slice();
-                walls[wall] = { ...walls[wall], noBase: !walls[wall]?.noBase };
-                return { ...r, walls };
-              }),
-            )
-          }
-        >
-          {w.noBase ? <Check size={15} /> : null} No baseboard here
-        </button>
-        {txt && parsed ? (
-          <button className="chip" onClick={() => save(parsed, true)}>
-            <Scale size={15} /> Save and rescale
-          </button>
-        ) : verified && job.scaleSet ? (
-          <button className="chip" onClick={() => w.lengthIn && save(w.lengthIn, true)}>
-            <Scale size={15} /> Set scale from this wall
-          </button>
-        ) : null}
-        {verified && (
-          <button
-            className="chip"
-            onClick={() =>
-              commit((j) =>
-                updRoom(j, room.id, (r) => {
-                  const walls = r.walls.slice();
-                  walls[wall] = { ...walls[wall], lengthIn: undefined, predicted: undefined };
-                  return { ...r, walls };
-                }),
-              )
-            }
-          >
-            Clear length
-          </button>
-        )}
-      </div>
+          ) : null}
+          {verified && (
+            <button
+              className="chip sm"
+              onClick={() =>
+                commit((j) =>
+                  updRoom(j, room.id, (r) => {
+                    const walls = r.walls.slice();
+                    walls[wall] = { ...walls[wall], lengthIn: undefined, predicted: undefined };
+                    return { ...r, walls };
+                  }),
+                )
+              }
+            >
+              Clear length
+            </button>
+          )}
+          {txt ? (
+            <button className="chip sm" onClick={() => setTxt('')}>
+              Clear typing
+            </button>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -356,116 +412,57 @@ export function OpeningSheet({ job, o, commit, onClose }: { job: Job; o: Opening
 
 // ---------------- Add a room by typing its size ----------------
 const ROOM_NAMES = ['Bedroom', 'Bath', 'Kitchen', 'Living', 'Hall', 'Closet'];
-const PAD_KEYS = ['7', '8', '9', "'", '4', '5', '6', '"', '1', '2', '3', '/', ' ', '0', '.', 'del'];
-const PAD_NAMES: Record<string, string | undefined> = { "'": 'feet', '"': 'inches', '/': 'fraction', ' ': 'space', '.': 'decimal point', del: 'Delete last character' };
 
-export function AddRoomSheet({ defaultName, onAdd, onSketch, onClose }: { defaultName: string; onAdd: (name: string, lengthIn: number, widthIn: number) => void; onSketch: () => void; onClose: () => void }) {
+export function AddRoomSheet({ defaultName, onAdd, onClose }: { defaultName: string; onAdd: (name: string, lengthIn: number, widthIn: number) => void; onSketch?: () => void; onClose: () => void }) {
   const [field, setField] = useState<0 | 1>(0);
   const [txt, setTxt] = useState<[string, string]>(['', '']);
   const [name, setName] = useState(defaultName);
   const vals = [parseLength(txt[0]), parseLength(txt[1])];
-  const cur = txt[field];
   const key = (k: string) =>
     setTxt((t) => {
       const n = t.slice() as [string, string];
-      n[field] = k === 'del' ? n[field].slice(0, -1) : (n[field] + k).replace(/\s{2,}/g, ' ');
+      n[field] = typeKey(n[field], k);
       return n;
     });
   const ready = vals[0] != null && vals[1] != null;
+  const confirm = () => {
+    if (ready) onAdd(name.trim() || defaultName, vals[0]!, vals[1]!);
+    else if (field === 0 && vals[0] != null) setField(1);
+    else if (field === 1 && vals[0] == null) setField(0);
+  };
+  usePhysicalKeys(key, confirm);
   const label = ['Length', 'Width'];
+  const goLabel = ready ? 'Add room' : field === 0 ? 'Width next' : 'Add room';
   return (
-    <div className="sheet wall-sheet add-sheet" role="region" aria-label="Add a room by its size">
-      <div className="sheet-head">
-        <div className="sheet-title">
-          <div className="eyebrow">New room</div>
-          <div className="h2">Type the room’s size</div>
-        </div>
-        <button className="icon-btn close" onClick={onClose} aria-label="Close">
-          <X size={20} />
-        </button>
-      </div>
-      <div className="size-fields">
+    <div className="tapebar add-bar" role="region" aria-label="Add a room by its size">
+      <div className="tb-head">
         {([0, 1] as const).map((i) => (
-          <button key={i} className={`size-field ${field === i ? 'on' : ''} ${txt[i] && vals[i] == null ? 'bad' : ''}`} onClick={() => setField(i)} aria-pressed={field === i}>
-            <span className="size-label">{label[i]}</span>
-            <span className="size-val">{txt[i] ? (vals[i] != null ? fmtFtIn(vals[i]!) : txt[i]) : <span className="muted">tap to type</span>}</span>
+          <button key={i} className={`tb-field ${field === i ? 'on' : ''} ${txt[i] && vals[i] == null ? 'bad' : ''}`} onClick={() => setField(i)} aria-pressed={field === i}>
+            <span className="tb-where">{label[i]}</span>
+            <span className="tb-len">{txt[i] ? (vals[i] != null ? fmtFtIn(vals[i]!) : txt[i]) : <span className="muted">{i === 0 ? 'long way' : 'short way'}</span>}</span>
           </button>
         ))}
-      </div>
-      <div className="sub add-sub">{cur && vals[field] == null ? <span className="bad-msg">Not a length yet. Try 12 6 or 12' 6 1/2"</span> : field === 0 ? 'Wall to wall the long way. 12 means 12 feet.' : 'Wall to wall the short way.'}</div>
-      <div className="keypad">
-        {PAD_KEYS.map((k) => (
-          <button key={k} className={`key ${/\d/.test(k) ? 'num' : 'sym'}`} onClick={() => key(k)} aria-label={PAD_NAMES[k]}>
-            {k === 'del' ? <Delete size={20} /> : k === ' ' ? 'space' : k === "'" ? "ft '" : k === '"' ? 'in "' : k}
-          </button>
-        ))}
-      </div>
-      <div className="row gap">
-        <button className="btn ghost" onClick={onSketch}>
-          Sketch it instead
-        </button>
-        {field === 0 && !ready ? (
-          <button className="btn primary grow" disabled={vals[0] == null} onClick={() => setField(1)}>
-            Next: width
-          </button>
-        ) : (
-          <button className="btn primary grow" disabled={!ready} onClick={() => ready && onAdd(name.trim() || defaultName, vals[0]!, vals[1]!)}>
-            <Check size={18} /> Add room
-          </button>
-        )}
-      </div>
-      <div className="chips" role="group" aria-label="Room name">
-        {ROOM_NAMES.map((nm) => (
-          <button key={nm} className={`chip ${name === nm ? 'on' : ''}`} onClick={() => setName(name === nm ? defaultName : nm)} aria-pressed={name === nm}>
-            {name === nm && <Check size={15} />} {nm}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ---------------- Type tape lengths into the side strip ----------------
-export function TapeSheet({ count, onAdd, onClose }: { count: number; onAdd: (inches: number) => void; onClose: () => void }) {
-  const [txt, setTxt] = useState('');
-  const parsed = parseLength(txt);
-  const key = (k: string) => setTxt((t) => (k === 'del' ? t.slice(0, -1) : (t + k).replace(/\s{2,}/g, ' ')));
-  return (
-    <div className="sheet wall-sheet tape-sheet" role="region" aria-label="Type tape lengths">
-      <div className="sheet-head">
-        <div className="sheet-title">
-          <div className="eyebrow">{count ? `${count} on the strip` : 'Tape lengths'}</div>
-          <div aria-live="polite" className={`readout ${txt ? (parsed != null ? 'typed-ok' : 'typed-bad') : ''}`}>
-            <div className="big-len">{txt ? parsed != null ? fmtFtIn(parsed) : <span className="bad">{txt}</span> : <span className="muted">0' 0"</span>}</div>
-          </div>
-          <div className="sub">{txt && parsed == null ? <span className="bad-msg">Not a length yet. Try 12 6 or 12' 6 1/2"</span> : 'Type each wall as you pull the tape. Drag them onto the walls after.'}</div>
-        </div>
-        <button className="icon-btn close" onClick={onClose} aria-label="Close">
+        <button className="tb-nav close" onClick={onClose} aria-label="Close">
           <X size={20} />
         </button>
       </div>
-      <div className="keypad">
-        {PAD_KEYS.map((k) => (
-          <button key={k} className={`key ${/\d/.test(k) ? 'num' : 'sym'}`} onClick={() => key(k)} aria-label={PAD_NAMES[k]}>
-            {k === 'del' ? <Delete size={20} /> : k === ' ' ? 'space' : k === "'" ? "ft '" : k === '"' ? 'in "' : k}
+      <TapePad
+        onKey={key}
+        onConfirm={confirm}
+        confirmDisabled={ready ? false : field === 0 ? vals[0] == null : true}
+        confirmLabel={goLabel}
+        confirm={
+          <>
+            <Check size={17} /> {goLabel}
+          </>
+        }
+      />
+      <div className="tb-chips" role="group" aria-label="Room name">
+        {ROOM_NAMES.map((nm) => (
+          <button key={nm} className={`chip sm ${name === nm ? 'on' : ''}`} onClick={() => setName(name === nm ? defaultName : nm)} aria-pressed={name === nm}>
+            {name === nm && <Check size={14} />} {nm}
           </button>
         ))}
-      </div>
-      <div className="row gap">
-        <button className="btn ghost" onClick={onClose}>
-          Done
-        </button>
-        <button
-          className="btn primary grow"
-          disabled={parsed == null}
-          onClick={() => {
-            if (parsed == null) return;
-            onAdd(parsed);
-            setTxt('');
-          }}
-        >
-          <Check size={18} /> Add to strip
-        </button>
       </div>
     </div>
   );

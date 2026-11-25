@@ -66,17 +66,17 @@ const stroke = async (pts: number[][]) => {
   const l = pts[pts.length - 1];
   await ptr('pointerup', l[0], l[1]);
 };
-const key = (k: string) => $$('.key').find((b) => b.textContent === k);
+const key = (k: string) => $$('.tk').find((b) => b.textContent === k);
+const go = () => $('.tk.go');
 const log = (...a: any[]) => console.log('•', ...a);
 
 log('welcome:', $('.welcome h1')?.textContent);
 await click(btn('Start a job'), 'start');
 log('welcome gone:', !$('.welcome'));
-log('title:', $('.job-title').textContent, '| first room card:', $('.first-room h2')?.textContent);
-await click(btn('Sketch an odd shape'), 'sketch instead');
+log('title:', $('.job-title').textContent, '| empty plan opens on:', $('.tool.on')?.textContent);
 log('hint:', $('.hintbar')?.textContent);
 await stroke([[110, 150], [330, 150], [330, 420], [110, 420], [112, 155]]);
-log('after draw, still sketching, no sheet:', !$('.sheet'), $('.tool.on')?.textContent);
+log('after draw, still sketching, no bar:', !$('.tapebar'), $('.tool.on')?.textContent);
 await new Promise((r) => setTimeout(r, 300));
 const saved = JSON.parse(localStorage.getItem('plumb.jobs.v1') || '[]');
 log('saved rooms:', saved[0]?.rooms?.length, JSON.stringify(saved[0]?.rooms?.[0]?.pts));
@@ -84,19 +84,20 @@ await stroke([[330, 150], [430, 150], [430, 300], [330, 300], [332, 152]]);
 log('labels:', $$('text.lbl').map((t) => t.textContent).join(' | '));
 await click($$('.tool').find((b) => b.textContent === 'Select'), 'select tool');
 await click(btn('Measure'), 'measure');
-log('wall sheet:', $('.eyebrow')?.textContent, $('.big-len')?.textContent, '|', $('.sub')?.textContent);
-for (const k of ['1', '2', "ft '", 'space', '6']) await click(key(k), k);
-log('typed preview:', $('.big-len')?.textContent);
-await click(btn('Save & next'), 'save');
-log('next wall:', $('.eyebrow')?.textContent, $('.big-len')?.textContent);
-await click(btn('Use ~'), 'use est');
-log('next wall:', $('.eyebrow')?.textContent, $('.big-len')?.textContent);
+log('tape bar:', $('.tb-where')?.textContent, $('.tb-len')?.textContent, '| go:', go()?.textContent, '| plan still shown:', !!$('svg.plan'));
+for (const k of ['1', '2', 'ft', 'space', '6']) await click(key(k), k);
+log('typed preview:', $('.tb-len')?.textContent, '| go:', go()?.textContent);
+await click(go(), 'save');
+log('next wall:', $('.tb-where')?.textContent, $('.tb-len')?.textContent);
+await click(go(), 'use est');
+log('next wall:', $('.tb-where')?.textContent, $('.tb-len')?.textContent);
 for (const k of ['1', '5', '0']) await click(key(k), k);
-log('typed 150:', $('.big-len')?.textContent);
-await click($$('.chip').find((b) => b.textContent?.includes('Door')), 'door chip');
-await click(btn('Save & next'), 'save2');
+log('typed 150:', $('.tb-len')?.textContent);
+await click($$('.tapebar .chip').find((b) => b.textContent?.includes('Door')), 'door chip');
+log('note:', $('.tb-note')?.textContent);
+await click(go(), 'save2');
 log('labels now:', $$('text.lbl').map((t) => t.textContent).join(' | '));
-await click($('.sheet .icon-btn.close'), 'close');
+await click($('.tapebar .tb-nav.close'), 'close');
 await click($$('.tool').find((b) => b.textContent === 'Window'), 'window tool');
 await click($('button[aria-label="Fit to screen"]'), 'fit');
 const tr = $('svg.plan > g').getAttribute('transform')!;
@@ -117,13 +118,13 @@ await ptr('pointerup', 460, 330);
 await click($('button[aria-label=Undo]'), 'undo');
 // add a room by typing its size
 await click($('button[aria-label="Add a room by its size"]'), 'room btn');
-log('add sheet:', $('.add-sheet .h2')?.textContent);
+log('add bar:', !!$('.add-bar'), '| go:', go()?.textContent);
 for (const k of ['1', '2']) await click(key(k), k);
-await click(btn('Next: width'), 'next width');
+await click(go(), 'next width');
 for (const k of ['1', '0', 'space', '6']) await click(key(k), k);
-log('size fields:', $$('.size-val').map((x) => x.textContent).join(' x '));
-await click($$('.add-sheet .chip').find((b) => b.textContent?.includes('Kitchen')), 'kitchen');
-await click(btn('Add room'), 'add room');
+log('size fields:', $$('.tb-field .tb-len').map((x) => x.textContent).join(' x '));
+await click($$('.add-bar .chip').find((b) => b.textContent?.includes('Kitchen')), 'kitchen');
+await click(go(), 'add room');
 log('toast:', $('.toast')?.textContent);
 log('rooms now:', $$('text.rname').map((t) => t.textContent).join(','), $$('text.rarea').map((t) => t.textContent).join(','));
 await new Promise((r) => setTimeout(r, 300));
@@ -170,57 +171,34 @@ await ptr('pointerup', 300, 300, 2);
 await ptr('pointerup', 150, 300, 1);
 log('pinch ok');
 
-// tape strip: type lengths, then drag one onto a wall and tap-place the other
-await click($('.job-btn'), 'drawer for tray');
+// walk around a fresh room: tap a wall while sketching, type two sides, the rest fill in
+await click($('.job-btn'), 'drawer for walk');
 await click(btn('New job'), 'new job');
-await click(btn('Sketch an odd shape'), 'sketch instead 2');
+log('new job opens on:', $('.tool.on')?.textContent);
 await stroke([[110, 200], [300, 200], [300, 360], [110, 360], [112, 205]]);
-await click($('button[aria-label="Type tape lengths"]'), 'tape btn');
-for (const k of ['1', '2']) await click(key(k), k);
-await click(btn('Add to strip'), 'add1');
-for (const k of ['1', '0', 'space', '6']) await click(key(k), k);
-await click(btn('Add to strip'), 'add2');
-log('tape sheet eyebrow:', $('.tape-sheet .eyebrow')?.textContent);
-await click(btn('Done'), 'done tape');
-log('tags:', $$('.tray .tag').map((t) => t.textContent).join(', '), '| hint:', $('.hintbar')?.textContent);
 {
   const tr3 = $('svg.plan > g').getAttribute('transform')!;
   const [, x3, y3, k3] = tr3.match(/translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)/)!.map(Number) as number[];
   const d3 = $('svg.plan > g path[stroke]').getAttribute('d')!.match(/-?[\d.]+/g)!.map(Number);
   const P = (i: number) => ({ x: d3[i * 2] * k3 + x3, y: d3[i * 2 + 1] * k3 + y3 });
   const top = { x: (P(0).x + P(1).x) / 2, y: (P(0).y + P(1).y) / 2 };
-  const tag = $$('.tray .tag')[0];
-  const tptr = async (type: string, x: number, y: number) => {
-    const ev = new dom.window.MouseEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0 });
-    Object.defineProperty(ev, 'pointerId', { value: 7 });
+  await ptr('pointerdown', top.x, top.y);
+  await ptr('pointerup', top.x, top.y);
+  log('tap wall while sketching opens bar:', $('.tb-where')?.textContent, $('.tb-len')?.textContent);
+  // a real keyboard works too
+  const kd = async (k: string) => {
     await act(async () => {
-      tag.dispatchEvent(ev);
+      window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: k, bubbles: true }));
     });
   };
-  await tptr('pointerdown', 350, 260);
-  for (let i = 1; i <= 6; i++) await tptr('pointermove', 350 + (top.x - 350) * (i / 6), 260 + (top.y - 260) * (i / 6));
-  log('dragging shows ghost:', !!$('.tag.ghost'));
-  await tptr('pointerup', top.x, top.y);
-  log('after drop toast:', $('.toast')?.textContent, '| tags left:', $$('.tray .tag').length);
-  // tap the remaining tag, then tap the right wall
-  const tag2 = $$('.tray .tag')[0];
-  for (const t of ['pointerdown', 'pointerup']) {
-    const ev = new dom.window.MouseEvent(t, { bubbles: true, clientX: 350, clientY: 260, button: 0 });
-    Object.defineProperty(ev, 'pointerId', { value: 8 });
-    await act(async () => {
-      tag2.dispatchEvent(ev);
-    });
-  }
-  log('armed hint:', $('.hintbar')?.textContent);
-  const tr4 = $('svg.plan > g').getAttribute('transform')!;
-  const [, x4, y4, k4] = tr4.match(/translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)/)!.map(Number) as number[];
-  const d4 = $('svg.plan > g path[stroke]').getAttribute('d')!.match(/-?[\d.]+/g)!.map(Number);
-  const Q = (i: number) => ({ x: d4[i * 2] * k4 + x4, y: d4[i * 2 + 1] * k4 + y4 });
-  const right = { x: (Q(1).x + Q(2).x) / 2, y: (Q(1).y + Q(2).y) / 2 };
-  await ptr('pointerdown', right.x, right.y);
-  await ptr('pointerup', right.x, right.y);
-  log('after tap-place toast:', $('.toast')?.textContent);
-  log('tray labels:', $$('text.lbl').map((t) => t.textContent).join(' | '), '| strip:', $('.hintbar')?.textContent);
+  for (const k of ['1', '2']) await kd(k);
+  log('keyboard typed:', $('.tb-len')?.textContent);
+  await kd('Enter');
+  log('walked to:', $('.tb-where')?.textContent);
+  for (const k of ['1', '0', 'space', '6']) await click(key(k), k);
+  await click(go(), 'save side 2');
+  log('bar closed when the room is done:', !$('.tapebar'), '| toast:', $('.toast')?.textContent);
+  log('walk labels:', $$('text.lbl').map((t) => t.textContent).join(' | '), '| strip:', $('.hintbar')?.textContent);
   log('area:', $$('text.rarea').map((t) => t.textContent).join(','));
 }
 await click($('.job-btn'), 'drawer2');
