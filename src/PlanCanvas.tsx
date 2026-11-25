@@ -130,8 +130,50 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
         out.push({ room: r.id, wall: i, x: m.x + nOut.x * off, y: m.y + nOut.y * off, text, verified, predicted: !!r.walls[i]?.predicted, w, noBase: !!r.walls[i]?.noBase, rot });
       }
     }
-    return out;
-  }, [shown, view.k]);
+    // a wall two rooms share is one wall: show one tag, the selected one's or the smaller room's,
+    // whose outside is the bigger room's inside where there's room for it
+    const area = (id: string) => {
+      const r = shown.rooms.find((x) => x.id === id);
+      return r ? Math.abs(signedArea(r.pts)) : 0;
+    };
+    const ends = (l: (typeof out)[number]) => wallEnds(shown.rooms.find((x) => x.id === l.room)!, l.wall);
+    const isSelL = (l: (typeof out)[number]) => sel?.kind === 'wall' && sel.room === l.room && sel.wall === l.wall;
+    const drop = new Set<(typeof out)[number]>();
+    for (let i = 0; i < out.length; i++)
+      for (let j = i + 1; j < out.length; j++) {
+        const A = out[i],
+          B = out[j];
+        if (A.room === B.room || drop.has(A) || drop.has(B)) continue;
+        const [a1, b1] = ends(A),
+          [a2, b2] = ends(B);
+        const tol = 0.5;
+        const same = (dist(a1, a2) < tol && dist(b1, b2) < tol) || (dist(a1, b2) < tol && dist(b1, a2) < tol);
+        if (!same) continue;
+        const keepA = isSelL(A) ? true : isSelL(B) ? false : area(A.room) <= area(B.room);
+        drop.add(keepA ? B : A);
+      }
+    // tags that would sit on top of each other: keep the one that matters most (picked, taped,
+    // worked out, then the longer wall's); the hidden one is still there when its wall is tapped
+    const kept = out.filter((l) => !drop.has(l));
+    const rank = (l: (typeof out)[number]) =>
+      (isSelL(l) ? 400 : l.verified && !l.predicted ? 300 : l.predicted ? 200 : 100) + Math.min(99, l.w / 10);
+    const box = (l: (typeof out)[number]) => {
+      const flat = Math.abs(l.rot) < 45;
+      const hw = ((flat ? l.w / 2 : 11) + 2) / view.k,
+        hh = ((flat ? 11 : l.w / 2) + 2) / view.k;
+      return { x0: l.x - hw, x1: l.x + hw, y0: l.y - hh, y1: l.y + hh };
+    };
+    const order = [...kept].sort((p, q) => rank(q) - rank(p));
+    const placed: ReturnType<typeof box>[] = [];
+    const show = new Set<(typeof out)[number]>();
+    for (const l of order) {
+      const bx = box(l);
+      if (!isSelL(l) && placed.some((o) => bx.x0 < o.x1 && bx.x1 > o.x0 && bx.y0 < o.y1 && bx.y1 > o.y0)) continue;
+      placed.push(bx);
+      show.add(l);
+    }
+    return kept.filter((l) => show.has(l));
+  }, [shown, view.k, sel]);
 
   // ---------- hit testing ----------
   const hit = useCallback(

@@ -441,9 +441,11 @@ export function reshapeWall(job: Job, roomId: string, wall: number, inches: numb
   const touchers = (pairs: [Pt, Pt][], skip: Set<string>) =>
     job.rooms.filter((x) => !skip.has(x.id) && x.pts.some((p) => pairs.some(([o]) => dist(o, p) < 0.01)));
   const seen = new Set<string>([r.id]);
+  // corners that stayed put count too: a room pinned to one is bent, not slid
+  const all: [Pt, Pt][] = r.pts.map((p, i) => [p, pts[i] ?? p]);
   for (const x of touchers(moves, seen)) {
     seen.add(x.id);
-    queue.push({ id: x.id, pairs: moves });
+    queue.push({ id: x.id, pairs: all });
   }
   while (queue.length) {
     const { id, pairs } = queue.shift()!;
@@ -459,13 +461,7 @@ export function reshapeWall(job: Job, roomId: string, wall: number, inches: numb
         queue.push({ id: y.id, pairs: own });
       }
     } else {
-      bent.set(
-        id,
-        x.pts.map((p) => {
-          const m = pairs.find(([o]) => dist(o, p) < 0.01);
-          return m ? { ...m[1] } : p;
-        }),
-      );
+      bent.set(id, followSquare(x, pairs));
     }
   }
   const r3 = (p: Pt) => ({ x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 });
@@ -495,4 +491,41 @@ export function roomBySize(job: Job, lengthIn: number, widthIn: number): Pt[] {
     { x: x0 + w, y: y0 + h },
     { x: x0, y: y0 + h },
   ];
+}
+
+/**
+ * Move a room's corners that sat on moved corners, then let its other corners follow along
+ * their square walls, so a closet in the notch of an L stays a rectangle in the notch.
+ */
+export function followSquare(x: Room, pairs: [Pt, Pt][]): Pt[] {
+  const old = x.pts;
+  const n = old.length;
+  const np: (Pt | null)[] = old.map((p) => {
+    const m = pairs.find(([o]) => dist(o, p) < 0.01);
+    return m ? { ...m[1] } : null;
+  });
+  const nb = (i: number, d: number) => {
+    const j = i + d;
+    if (x.closed) return (j + n) % n;
+    return j >= 0 && j < n ? j : -1;
+  };
+  for (let pass = 0; pass < n; pass++) {
+    let any = false;
+    for (let i = 0; i < n; i++) {
+      if (np[i]) continue;
+      let nx: number | null = null,
+        ny: number | null = null;
+      for (const d of [-1, 1]) {
+        const j = nb(i, d);
+        if (j < 0 || j === i || !np[j]) continue;
+        if (Math.abs(old[j].y - old[i].y) < 1e-6) ny = np[j]!.y;
+        else if (Math.abs(old[j].x - old[i].x) < 1e-6) nx = np[j]!.x;
+      }
+      if (nx == null && ny == null) continue;
+      np[i] = { x: nx ?? old[i].x, y: ny ?? old[i].y };
+      any = true;
+    }
+    if (!any) break;
+  }
+  return np.map((p, i) => (p ? { x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 } : old[i]));
 }

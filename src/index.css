@@ -2281,3 +2281,51 @@ body {
   width: 58px;
   padding: 0 4px;
 }
+
+/* a toast never swallows a tap on the plan; only its Undo takes one */
+.toast {
+  pointer-events: none;
+}
+.toast-undo {
+  pointer-events: auto;
+}
+
+/* small phones: a door's size chips fit on one line each */
+@media (max-width: 379px) {
+  .open-bar .chip.sm {
+    min-width: 38px;
+    padding: 0 5px;
+  }
+  .open-bar .tb-chips {
+    gap: 4px;
+  }
+  .tb-lab {
+    width: 36px;
+  }
+}
+
+/* an empty plan shows where to start: a dashed room with a finger tracing it */
+.empty-plan {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translate(-50%, -50%);
+  width: max-content;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 1;
+}
+.empty-plan p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--pencil);
+}
+@media (prefers-reduced-motion: reduce) {
+  .empty-plan circle {
+    display: none;
+  }
+}

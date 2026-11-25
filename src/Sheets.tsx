@@ -402,7 +402,7 @@ export function OpeningSheet({ job, o, commit, onClose, onDelete }: { job: Job; 
             </button>
             {o.type === 'door' && (
               <button className={`chip sm ${o.newDoor ? 'on' : ''}`} onClick={() => set({ newDoor: !o.newDoor })} aria-pressed={!!o.newDoor}>
-                {o.newDoor && <Check size={14} />} New prehung door
+                {o.newDoor && <Check size={14} />} Prehung door
               </button>
             )}
           </div>

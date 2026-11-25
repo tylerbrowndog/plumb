@@ -1,6 +1,7 @@
 // Checks for line editing. Run: npx tsx e2e/edit.ts
 import { alignWallOffset, closeRun, deleteCorner, deleteWall, moveRoom, moveWall, roomDragOffset, splitWall } from '../src/edit.ts';
 import type { Job } from '../src/types.ts';
+import { applyMeasurement } from '../src/measure.ts';
 
 let fails = 0;
 const ok = (c: boolean, m: string) => {
@@ -100,6 +101,17 @@ const base = (): Job =>
   const two = { ...base(), rooms: [...base().rooms, { ...base().rooms[0], id: 'r2', pts: [{ x: 130, y: 200 }, { x: 200, y: 200 }, { x: 200, y: 300 }, { x: 130, y: 300 }] }] } as Job;
   const d = alignWallOffset(two, two.rooms[0], 1, -8, 4);
   ok(Math.abs(d - -10) < 1e-6, 'slid wall lines up with the other room');
+}
+// a closet in an L's notch stays in the notch when the L is measured
+{
+  const mk = (id: string, pts: { x: number; y: number }[]) => ({ id, name: id, pts, closed: true, walls: pts.map(() => ({})) });
+  const L = mk('L', [{ x: 0, y: 0 }, { x: 90, y: 0 }, { x: 90, y: 66 }, { x: 144, y: 66 }, { x: 144, y: 168 }, { x: 0, y: 168 }]);
+  const C = mk('C', [{ x: 90, y: 0 }, { x: 144, y: 0 }, { x: 144, y: 66 }, { x: 90, y: 66 }]);
+  const j0 = { ...base(), rooms: [L, C], openings: [], inPerUnit: 1 } as unknown as Job;
+  const j = applyMeasurement(j0, 'L', 1, 48);
+  const c = j.rooms.find((r) => r.id === 'C')!;
+  ok(c.pts[0].y === 0 && c.pts[2].y === 48 && c.pts[3].y === 48, 'closet keeps its top and follows the shorter notch');
+  ok(c.walls[3].lengthIn === 48 && c.walls[1].lengthIn === 48, 'closet takes the shared length and works out its other side');
 }
 console.log(fails ? `${fails} failed` : 'all good');
 process.exit(fails ? 1 : 0);

@@ -22,6 +22,7 @@ export function applyMeasurement(job: Job, roomId: string, wall: number, inches:
   });
   // a shared wall is one real wall: copy the length to the matching wall of an attached room
   const [a, b] = wallEnds(room, wall);
+  const linked = new Set<string>();
   nj = {
     ...nj,
     rooms: nj.rooms.map((r) => {
@@ -33,6 +34,7 @@ export function applyMeasurement(job: Job, roomId: string, wall: number, inches:
         if (same && !isTaped(r, i)) {
           walls = walls === r.walls ? walls.slice() : walls;
           walls[i] = { ...walls[i], lengthIn: inches, predicted: undefined };
+          linked.add(r.id);
         }
       }
       return walls === r.walls ? r : { ...r, walls };
@@ -41,7 +43,10 @@ export function applyMeasurement(job: Job, roomId: string, wall: number, inches:
   const dl = drawnLen(room, wall);
   if ((setScale || !job.scaleSet) && dl > 0) nj = { ...nj, inPerUnit: inches / dl, scaleSet: true };
   nj = reshapeWall(nj, room.id, wall, inches);
-  return predictRoom(nj, room.id);
+  nj = predictRoom(nj, room.id);
+  // an attached room that just got a length may now have its own walls decided
+  for (const id of linked) nj = predictRoom(nj, id);
+  return nj;
 }
 
 /**

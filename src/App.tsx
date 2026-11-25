@@ -183,13 +183,29 @@ export default function App() {
   // ----- view helpers -----
   const RAIL = 72,
     RIGHT = 64;
-  const sheetH = sel ? (sel.kind === 'wall' ? 236 : sel.kind === 'room' ? 270 : sel.kind === 'opening' ? (mainSize.w < 380 ? 390 : 330) : 70) : adding ? 236 : 70;
+  // how much of the bottom each bar covers (its height plus the gap under it)
+  const sheetH = sel ? (sel.kind === 'wall' ? 226 : sel.kind === 'room' ? 308 : sel.kind === 'opening' ? 356 : 70) : adding ? 228 : 70;
+  // where the tools float: the left rail and the view buttons. The plan fits beside them, or below
+  // the rail across the full width, whichever lets it draw bigger (a phone held upright: usually below)
+  const toolRects = () => {
+    const rect = (sel: string, fb: { l: number; t: number; r: number; b: number }) => {
+      const el = document.querySelector(sel) as HTMLElement | null;
+      return el ? { l: el.offsetLeft, t: el.offsetTop, r: el.offsetLeft + el.offsetWidth, b: el.offsetTop + el.offsetHeight } : fb;
+    };
+    return [rect('.rail', { l: 10, t: 8, r: RAIL, b: 320 }), rect('.view-ctl', { l: mainSize.w - RIGHT, t: 8, r: mainSize.w - 10, b: 150 })];
+  };
+  const PAD = 30; // the length tags sit just outside each wall
+  const fitAreas = () => {
+    const [rail, vc] = toolRects();
+    const bottom = mainSize.h - 92;
+    return [
+      { x0: rail.r + 6, x1: vc.l - 6, y0: 12, y1: bottom },
+      { x0: 8, x1: mainSize.w - 8, y0: Math.max(rail.b, vc.b) + 6, y1: bottom },
+    ];
+  };
   const fit = useCallback(
     (j: Job = jobRef.current) => {
       const b = bounds(j);
-      const PAD = 30; // the length tags sit just outside each wall
-      const availW = mainSize.w - RAIL - RIGHT - 16 - PAD * 2;
-      const availH = mainSize.h - 40 - 92 - PAD * 2;
       if (!b) {
         const k = (mainSize.w * 0.55) / 144;
         setView({ k, x: mainSize.w / 2 - 72 * k, y: mainSize.h * 0.4 - 60 * k });
@@ -197,9 +213,19 @@ export default function App() {
       }
       const bw = Math.max(24, b.maxX - b.minX),
         bh = Math.max(24, b.maxY - b.minY);
-      const k = Math.min(availW / bw, availH / bh, 8);
-      setView({ k, x: RAIL + 8 + PAD + (availW - bw * k) / 2 - b.minX * k, y: 40 + PAD + (availH - bh * k) / 2 - b.minY * k });
+      let best: { k: number; x: number; y: number } | null = null;
+      for (const a of fitAreas()) {
+        const aw = a.x1 - a.x0 - PAD * 2,
+          ah = a.y1 - a.y0 - PAD * 2;
+        if (aw < 60 || ah < 60) continue;
+        const k = Math.min(aw / bw, ah / bh, 8);
+        // the side area wins ties: it keeps the plan higher on the screen
+        if (!best || k > best.k * 1.08)
+          best = { k, x: a.x0 + PAD + (aw - bw * k) / 2 - b.minX * k, y: a.y0 + PAD + (ah - bh * k) / 2 - b.minY * k };
+      }
+      if (best) setView(best);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [mainSize],
   );
 
@@ -227,20 +253,42 @@ export default function App() {
       const [a, b] = wallEnds(r, o.wall);
       m = lerp(a, b, o.t);
     }
+    if (sel?.kind === 'room') {
+      // a picked room: lift it so it isn't hidden behind its bar
+      const r = job.rooms.find((x) => x.id === sel.room);
+      if (!r || !r.pts.length) return;
+      const ys = r.pts.map((q) => q.y);
+      const y0 = Math.min(...ys),
+        y1 = Math.max(...ys);
+      setView((v) => {
+        const top = 16,
+          bottom = mainSize.h - sheetH - 34;
+        const s0 = y0 * v.k + v.y,
+          s1 = y1 * v.k + v.y;
+        if (s1 <= bottom) return v;
+        // bring the bottom up, but never push the top off the screen; a tall room shows its top part
+        const dy = Math.max(bottom - s1, top - s0);
+        return dy < 0 ? { ...v, y: v.y + dy } : v;
+      });
+      return;
+    }
     if (!m) return;
     const pt = m;
+    const tools = toolRects();
     setView((v) => {
       const sx = pt.x * v.k + v.x,
         sy = pt.y * v.k + v.y;
       const top = 24,
         bottom = mainSize.h - sheetH - 30;
-      if (sy > top && sy < bottom && sx > RAIL + 10 && sx < mainSize.w - RIGHT - 10) return v;
-      const tx = RAIL + (mainSize.w - RAIL - RIGHT) / 2,
-        ty = top + (bottom - top) / 2;
+      const underTool = tools.some((q) => sx > q.l - 14 && sx < q.r + 14 && sy > q.t - 14 && sy < q.b + 14);
+      if (sy > top && sy < bottom && sx > 16 && sx < mainSize.w - 16 && !underTool) return v;
+      // move only as far as it takes, so the plan doesn't jump
+      const ty = sy > bottom ? bottom - 50 : sy < top ? top + 50 : sy;
+      const tx = underTool || sx < 16 || sx > mainSize.w - 16 ? RAIL + (mainSize.w - RAIL - RIGHT) / 2 : sx;
       return { ...v, x: v.x + (tx - sx), y: v.y + (ty - sy) };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel && sel.kind === 'wall' ? sel.room + sel.wall : sel?.kind === 'opening' ? sel.id : null]);
+  }, [sel && sel.kind === 'wall' ? sel.room + sel.wall : sel?.kind === 'opening' ? sel.id : sel?.kind === 'room' ? 'room:' + sel.room : null]);
 
   // when a bar closes, bring the plan back into view if measuring or panning left part of it under the tools
   const hadBar = useRef(false);
@@ -256,7 +304,8 @@ export default function App() {
       r = b.maxX * view.k + view.x + pad,
       t = b.minY * view.k + view.y - pad,
       bt = b.maxY * view.k + view.y + pad;
-    if (l < RAIL || r > mainSize.w - RIGHT || t < 0 || bt > mainSize.h - 84) fit();
+    const under = toolRects().some((q) => l < q.r && r > q.l && t < q.b && bt > q.t);
+    if (under || l < 0 || r > mainSize.w || t < 0 || bt > mainSize.h - 84) fit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, adding]);
 
@@ -328,6 +377,28 @@ export default function App() {
         <div className="main" ref={mainRef}>
           <PlanCanvas job={job} sel={sel} setSel={setSel} tool={tool} setTool={setTool} commit={commit} view={view} setView={setView} allow45={allow45} />
 
+          {job.rooms.length === 0 && !adding && (tool === 'draw' || tool === 'rect') && (
+            <div className="empty-plan" aria-hidden="true">
+              <svg width="168" height="128" viewBox="0 0 168 128">
+                <path id="emptyPath" d="M24 22 H144 V106 H24 Z" fill="none" stroke="var(--pencil)" strokeWidth="1.5" strokeDasharray="5 6" strokeLinejoin="round" opacity="0.7" />
+                <path d="M24 22 H144 V106 H24 Z" pathLength="100" fill="none" stroke="var(--wall)" strokeWidth="2" strokeLinejoin="round" strokeDasharray="100 100" strokeDashoffset="100">
+                  <animate attributeName="stroke-dashoffset" dur="3.2s" repeatCount="indefinite" values="100;0;0;100" keyTimes="0;0.75;0.97;1" />
+                </path>
+                <circle r="9" fill="var(--accent)" opacity="0.28">
+                  <animateMotion dur="3.2s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.75;1" calcMode="linear">
+                    <mpath href="#emptyPath" />
+                  </animateMotion>
+                </circle>
+                <circle r="4.5" fill="var(--accent)">
+                  <animateMotion dur="3.2s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.75;1" calcMode="linear">
+                    <mpath href="#emptyPath" />
+                  </animateMotion>
+                </circle>
+              </svg>
+              <p>Draw your first room here</p>
+            </div>
+          )}
+
           <div className="view-ctl">
             <button className="vbtn" onClick={undo} disabled={!H().past.length} aria-label="Undo">
               <Undo2 size={20} />
@@ -355,10 +426,10 @@ export default function App() {
                     <span className="strip-line">
                       {unverified > 0 ? (
                         <>
-                          <b>{est.verifiedWalls}</b> of {est.totalWalls} walls measured
+                          <b>{est.verifiedWalls}</b> of {est.totalWalls} {mainSize.w < 380 ? 'measured' : 'walls measured'}
                         </>
                       ) : (
-                        <>All {est.totalWalls} walls measured</>
+                        <>{mainSize.w < 380 ? 'All measured' : `All ${est.totalWalls} walls measured`}</>
                       )}
                     </span>
                     <span className="tape-progress" role="img" aria-label={`${est.verifiedWalls} of ${est.totalWalls} walls measured`}>
@@ -366,7 +437,10 @@ export default function App() {
                     </span>
                   </div>
                   {(tool === 'draw' || tool === 'rect') && (
-                    <button className={`mini ${allow45 ? 'on' : ''}`} onClick={() => setAllow45(!allow45)} aria-pressed={allow45} aria-label="Allow 45 degree walls">
+                    <button className={`mini ${allow45 ? 'on' : ''}`} onClick={() => {
+                        setAllow45(!allow45);
+                        toast(allow45 ? 'Corners snap square again.' : '45° walls on. A slanted stroke stays slanted, for bays and angled corners.');
+                      }} aria-pressed={allow45} aria-label="Allow 45 degree walls">
                       45°
                     </button>
                   )}
@@ -597,7 +671,7 @@ export default function App() {
       )}
 
       {toastMsg && (
-        <div className="toast" role="status" aria-live="polite">
+        <div className="toast" role="status" aria-live="polite" style={{ top: 'auto', bottom: `calc(var(--safe-b) + ${tab === 'plan' ? sheetH + 18 : 98}px)` }}>
           <span>{toastMsg}</span>
           {toastUndo && (
             <button
