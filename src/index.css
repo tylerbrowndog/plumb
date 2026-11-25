@@ -1348,9 +1348,13 @@ a {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--safe-b) + 150px);
+  top: calc(var(--safe-t) + 72px);
   transform: translateX(-50%);
+  width: max-content;
   max-width: calc(100vw - 32px);
+  display: flex;
+  align-items: center;
+  gap: 14px;
   background: var(--case);
   color: var(--case-text);
   font-weight: 600;
@@ -1737,4 +1741,52 @@ a {
   .tapebar {
     animation: none;
   }
+}
+
+/* ---------- editing: a small bar of actions over the corner you picked ---------- */
+.bubble {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--case);
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(20, 23, 18, 0.3);
+  animation: fade 0.12s ease-out;
+}
+.bub-btn {
+  flex: 1;
+  height: 44px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 14.5px;
+  color: var(--case-text);
+  white-space: nowrap;
+}
+.bub-btn:active {
+  background: var(--case-2);
+}
+.bub-btn.danger {
+  color: #ff9a8f;
+}
+.bub-btn:disabled {
+  opacity: 0.4;
+}
+.bubble :focus-visible {
+  outline-color: var(--tape);
+}
+.tb-nav.del {
+  color: #ff9a8f;
+}
+.toast-undo {
+  color: var(--tape);
+  font-weight: 700;
+  font-size: 15px;
+  padding: 6px 4px;
+  margin: -6px 0;
 }

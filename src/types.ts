@@ -102,6 +102,7 @@ export interface Job {
 export type Selection =
   | { kind: 'room'; room: string }
   | { kind: 'wall'; room: string; wall: number }
+  | { kind: 'corner'; room: string; idx: number }
   | { kind: 'opening'; id: string }
   | null;
 

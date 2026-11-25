@@ -22,6 +22,7 @@ import {
 } from './geometry';
 import { fmtFtIn } from './units';
 import { newRoom } from './store';
+import { moveWall, wallDragOffset } from './edit';
 
 export interface View {
   x: number;
@@ -50,6 +51,7 @@ type Gesture =
   | { type: 'pan'; s0: Pt; v0: View; moved: boolean; tap: Selection | 'clear' }
   | { type: 'vertex'; refs: { room: string; idx: number }[]; s0: Pt; moved: boolean; tap: Selection; base: Job }
   | { type: 'opening'; id: string; s0: Pt; moved: boolean }
+  | { type: 'wallmove'; room: string; wall: number; s0: Pt; w0: Pt; moved: boolean; base: Job }
   | { type: 'place'; s0: Pt; moved: boolean };
 
 const TAP = 8; // px
@@ -207,6 +209,14 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
     }
     if (pointers.current.size > 2) return;
     const w = toWorld(s);
+    if (sel?.kind === 'wall') {
+      const h = hit(s);
+      if (h && h.kind === 'wall' && h.room === sel.room && h.wall === sel.wall) {
+        g.current = { type: 'wallmove', room: sel.room, wall: sel.wall, s0: s, w0: w, moved: false, base: job };
+        rerender();
+        return;
+      }
+    }
     if (tool === 'draw') {
       g.current = { type: 'stroke', pts: [w], s0: s, moved: false };
     } else if (tool === 'rect') {
@@ -220,7 +230,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
         const p = r.pts[h.idx];
         const refs: { room: string; idx: number }[] = [];
         for (const rr of job.rooms) rr.pts.forEach((q, idx) => dist(q, p) < 0.01 && refs.push({ room: rr.id, idx }));
-        g.current = { type: 'vertex', refs, s0: s, moved: false, tap: { kind: 'room', room: h.room }, base: job };
+        g.current = { type: 'vertex', refs, s0: s, moved: false, tap: { kind: 'corner', room: h.room, idx: h.idx }, base: job };
       } else if (h && h.kind === 'opening' && sel?.kind === 'opening' && sel.id === h.id) {
         g.current = { type: 'opening', id: h.id, s0: s, moved: false };
       } else {
@@ -290,6 +300,13 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
         }),
       };
       setDragJob(next);
+    } else if (gs.type === 'wallmove') {
+      gs.moved ||= moved;
+      if (!gs.moved) return;
+      const r = gs.base.rooms.find((x) => x.id === gs.room);
+      if (!r) return;
+      const d = wallDragOffset(r, gs.wall, gs.w0, toWorld(s));
+      setDragJob(d ? moveWall(gs.base, gs.room, gs.wall, d) : gs.base);
     } else if (gs.type === 'opening') {
       gs.moved ||= moved;
       if (!gs.moved) return;
@@ -316,7 +333,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
     const tapSelect = () => {
       const h = hit(s);
       if (h && h.kind !== 'vertex') setSel(h);
-      else if (h && h.kind === 'vertex') setSel({ kind: 'room', room: h.room });
+      else if (h && h.kind === 'vertex') setSel({ kind: 'corner', room: h.room, idx: h.idx });
       else setSel(null);
     };
     if (gs.type === 'stroke') {
@@ -371,6 +388,12 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
         const dj = dragJob;
         commit(() => dj);
       } else if (!gs.moved) setSel(gs.tap);
+      setDragJob(null);
+    } else if (gs.type === 'wallmove') {
+      if (gs.moved && dragJob && dragJob !== gs.base) {
+        const dj = dragJob;
+        commit(() => dj);
+      }
       setDragJob(null);
     } else if (gs.type === 'opening') {
       if (gs.moved && dragJob) {
@@ -542,6 +565,13 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
             r.pts.map((p, i) => {
               const isSel = r.id === selRoomId;
               if (!isSel && tool !== 'select') return null;
+              if (sel?.kind === 'corner' && sel.room === r.id && sel.idx === i)
+                return (
+                  <g key={r.id + i}>
+                    <circle cx={p.x} cy={p.y} r={16 / k} fill="var(--accent)" fillOpacity={0.18} />
+                    <circle cx={p.x} cy={p.y} r={8 / k} fill="var(--handle)" stroke="var(--accent)" strokeWidth={3} vectorEffect="non-scaling-stroke" />
+                  </g>
+                );
               return (
                 <circle key={r.id + i} cx={p.x} cy={p.y} r={(isSel ? 6.5 : 4) / k} fill={isSel ? 'var(--handle)' : 'var(--canvas)'} stroke={isSel ? 'var(--accent)' : 'var(--wall-dim)'} strokeWidth={2} vectorEffect="non-scaling-stroke" />
               );
@@ -570,6 +600,26 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           </g>
         );
       })}
+
+      {/* grip on the selected line: drag it to slide the line */}
+      {sel?.kind === 'wall' &&
+        (() => {
+          const r = shown.rooms.find((x) => x.id === sel.room);
+          if (!r || sel.wall >= wallCount(r)) return null;
+          const [a, b] = wallEnds(r, sel.wall);
+          if (dist(a, b) * k < 60) return null;
+          const m = lerp(a, b, 0.5);
+          const nO = outwardNormal(r, a, b);
+          const sx = m.x * k + view.x - nO.x * 6,
+            sy = m.y * k + view.y - nO.y * 6;
+          const ang = (Math.atan2(nO.y, nO.x) * 180) / Math.PI;
+          return (
+            <g transform={`translate(${sx} ${sy}) rotate(${ang})`} pointerEvents="none" className="wall-grip">
+              <circle r={12} fill="var(--handle)" stroke="var(--accent)" strokeWidth={2} />
+              <path d="M -7 0 L 7 0 M -7 0 L -3.5 -3.5 M -7 0 L -3.5 3.5 M 7 0 L 3.5 -3.5 M 7 0 L 3.5 3.5" stroke="var(--accent)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </g>
+          );
+        })()}
 
       {/* room names */}
       {shown.rooms.filter((r) => r.closed && r.pts.length >= 3).map((r) => {

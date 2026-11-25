@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MousePointer2, PenLine, SquarePlus, DoorOpen, AppWindow, Undo2, Redo2, Maximize, Menu, ChevronDown, CircleHelp } from 'lucide-react';
+import { MousePointer2, PenLine, SquarePlus, DoorOpen, AppWindow, Undo2, Redo2, Maximize, Menu, ChevronDown, CircleHelp, Trash2, Settings2 } from 'lucide-react';
+import { canDeleteCorner, deleteCorner, deleteWall, deleteWallEffect, splitWall } from './edit';
 import type { Job, Selection, Tool } from './types';
 import PlanCanvas, { type View } from './PlanCanvas';
 import { AddRoomSheet, OpeningSheet, RoomSheet, WallSheet } from './Sheets';
@@ -20,7 +21,7 @@ const TOOLS: { t: Tool | 'add'; icon: typeof PenLine; label: string }[] = [
 ];
 
 const HINTS: Record<Tool, string> = {
-  select: 'Tap a wall to put in its length. Drag a corner to move it.',
+  select: 'Tap a line to measure, move or delete it. Tap a corner to drag or delete it.',
   draw: 'Draw walls with a finger. Corners snap square. Tap a wall to measure it.',
   rect: 'Drag corner to corner for a square room.',
   door: 'Tap a wall where the door goes.',
@@ -51,6 +52,7 @@ export default function App() {
   const [drawer, setDrawer] = useState(false);
   const [allow45, setAllow45] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [toastUndo, setToastUndo] = useState(false);
   const [welcome, setWelcome] = useState(() => !seenWelcome() && !init.jobs.some((j) => j.rooms.length));
   const hist = useRef<Record<string, { past: Job[]; future: Job[] }>>({});
   const [, bump] = useState(0);
@@ -58,10 +60,11 @@ export default function App() {
   const [mainSize, setMainSize] = useState({ w: 390, h: 700 });
   const [view, setView] = useState<View>({ x: 60, y: 120, k: 2 });
 
-  const toast = useCallback((s: string) => {
+  const toast = useCallback((s: string, undoable = false) => {
     setToastMsg(s);
+    setToastUndo(undoable);
     window.clearTimeout((toast as unknown as { t?: number }).t);
-    (toast as unknown as { t?: number }).t = window.setTimeout(() => setToastMsg(null), 1800);
+    (toast as unknown as { t?: number }).t = window.setTimeout(() => setToastMsg(null), undoable ? 4500 : 1800);
   }, []);
 
   useEffect(() => {
@@ -343,8 +346,63 @@ export default function App() {
           </nav>
 
           {sel?.kind === 'wall' && selRoom && sel.wall < wallCount(selRoom) && (
-            <WallSheet job={job} room={selRoom} wall={sel.wall} commit={commit} onSelectWall={(room, wall) => setSel({ kind: 'wall', room, wall })} onClose={() => setSel(null)} />
+            <WallSheet
+              job={job}
+              room={selRoom}
+              wall={sel.wall}
+              commit={commit}
+              onSelectWall={(room, wall) => setSel({ kind: 'wall', room, wall })}
+              onClose={() => setSel(null)}
+              onDelete={() => {
+                const eff = deleteWallEffect(selRoom, sel.wall);
+                const id = selRoom.id,
+                  w = sel.wall;
+                commit((j) => deleteWall(j, id, w));
+                setSel(null);
+                toast(eff === 'opens' ? `Line deleted. ${selRoom.name} is open there now.` : eff === 'splits' ? 'Line deleted. The run is in two parts now.' : eff === 'room' ? `${selRoom.name} deleted.` : 'Line deleted.', true);
+              }}
+              onAddCorner={() => {
+                const id = selRoom.id,
+                  w = sel.wall;
+                commit((j) => splitWall(j, id, w));
+                setSel({ kind: 'corner', room: id, idx: w + 1 });
+                toast('Corner added in the middle. Drag it to bend the line.');
+              }}
+            />
           )}
+          {sel?.kind === 'corner' &&
+            selRoom &&
+            selRoom.pts[sel.idx] &&
+            (() => {
+              const p = selRoom.pts[sel.idx];
+              const sx = p.x * view.k + view.x,
+                sy = p.y * view.k + view.y;
+              const W = 236;
+              const left = Math.max(8, Math.min(mainSize.w - W - 8, sx - W / 2));
+              const top = sy - 70 < 8 ? sy + 26 : sy - 70;
+              const ok = canDeleteCorner(selRoom);
+              return (
+                <div className="bubble" style={{ left, top, width: W }} role="toolbar" aria-label="Corner">
+                  <button
+                    className="bub-btn danger"
+                    disabled={!ok}
+                    title={ok ? 'Delete this corner' : 'A room needs at least three corners'}
+                    onClick={() => {
+                      const id = selRoom.id,
+                        idx = sel.idx;
+                      commit((j) => deleteCorner(j, id, idx));
+                      setSel(null);
+                      toast('Corner deleted. The lines on each side are one line now.', true);
+                    }}
+                  >
+                    <Trash2 size={17} /> Delete corner
+                  </button>
+                  <button className="bub-btn" onClick={() => setSel({ kind: 'room', room: selRoom.id })}>
+                    <Settings2 size={17} /> Room
+                  </button>
+                </div>
+              );
+            })()}
           {sel?.kind === 'room' && selRoom && (
             <RoomSheet
               job={job}
@@ -475,7 +533,18 @@ export default function App() {
 
       {toastMsg && (
         <div className="toast" role="status" aria-live="polite">
-          {toastMsg}
+          <span>{toastMsg}</span>
+          {toastUndo && (
+            <button
+              className="toast-undo"
+              onClick={() => {
+                undo();
+                setToastMsg(null);
+              }}
+            >
+              Undo
+            </button>
+          )}
         </div>
       )}
     </div>

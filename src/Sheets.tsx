@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, DoorOpen, AppWindow, Trash2, Ruler, Check, Scale, Delete, X, RectangleHorizontal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, DoorOpen, AppWindow, Trash2, Ruler, Check, Scale, Delete, X, RectangleHorizontal, Plus } from 'lucide-react';
 import type React from 'react';
 import type { FloorType, Job, Opening, OpeningType, Room } from './types';
 import { isVerified, uid, wallCount, wallLenIn } from './geometry';
@@ -71,7 +71,7 @@ function TapePad({ onKey, confirm, onConfirm, confirmDisabled, confirmLabel }: {
 
 const typeKey = (t: string, k: string) => (k === 'del' ? t.slice(0, -1) : (t + k).replace(/\s{2,}/g, ' ').replace(/^\s+/, ''));
 
-export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { job: Job; room: Room; wall: number; commit: Commit; onSelectWall: (room: string, wall: number) => void; onClose: () => void }) {
+export function WallSheet({ job, room, wall, commit, onSelectWall, onClose, onDelete, onAddCorner }: { job: Job; room: Room; wall: number; commit: Commit; onSelectWall: (room: string, wall: number) => void; onClose: () => void; onDelete: () => void; onAddCorner: () => void }) {
   const [txt, setTxt] = useState('');
   const [more, setMore] = useState(false);
   useEffect(() => setTxt(''), [room.id, wall]);
@@ -159,6 +159,9 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
         <button className="tb-nav" onClick={() => go(1)} aria-label="Next wall">
           <ChevronRight size={22} />
         </button>
+        <button className="tb-nav del" onClick={onDelete} aria-label="Delete this line" title="Delete this line">
+          <Trash2 size={19} />
+        </button>
         <button className="tb-nav close" onClick={onClose} aria-label="Close">
           <X size={20} />
         </button>
@@ -167,6 +170,9 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
       <TapePad onKey={key} onConfirm={confirm} confirmDisabled={txt ? parsed == null || parsed <= 0 : !verified && !canEstimate} confirmLabel={goLabel} confirm={<><Check size={17} /> {goLabel}</>} />
 
       <div className="tb-chips" role="group" aria-label="This wall">
+        <button className="chip sm" onClick={onAddCorner}>
+          <Plus size={15} /> Corner
+        </button>
         <button className="chip sm" onClick={() => addOpening(job, room, wall, 'door', commit)}>
           <DoorOpen size={15} /> Door
         </button>

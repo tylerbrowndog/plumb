@@ -200,6 +200,61 @@ await stroke([[110, 200], [300, 200], [300, 360], [110, 360], [112, 205]]);
   log('bar closed when the room is done:', !$('.tapebar'), '| toast:', $('.toast')?.textContent);
   log('walk labels:', $$('text.lbl').map((t) => t.textContent).join(' | '), '| strip:', $('.hintbar')?.textContent);
   log('area:', $$('text.rarea').map((t) => t.textContent).join(','));
+
+  // editing lines like a pro app: select a line, then delete, add a corner, slide it
+  const saved = () => JSON.parse(localStorage.getItem('plumb.jobs.v1') || '[]');
+  const curRoom = async () => {
+    await new Promise((r) => setTimeout(r, 300));
+    const js = saved();
+    const cur = localStorage.getItem('plumb.current.v1');
+    let id = cur;
+    try {
+      id = JSON.parse(cur || 'null');
+    } catch {
+      /* stored bare */
+    }
+    const j = js.find((x: any) => x.id === id) ?? js[js.length - 1];
+    return j.rooms;
+  };
+  const screenOf = () => {
+    const tr = $('svg.plan > g').getAttribute('transform')!;
+    const [, x, y, k] = tr.match(/translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)/)!.map(Number) as number[];
+    return (p: { x: number; y: number }) => ({ x: p.x * k + x, y: p.y * k + y });
+  };
+  const tapAt = async (p: { x: number; y: number }) => {
+    await ptr('pointerdown', p.x, p.y);
+    await ptr('pointerup', p.x, p.y);
+  };
+  let rooms = await curRoom();
+  let S = screenOf();
+  const mid = (r: any, i: number) => S({ x: (r.pts[i].x + r.pts[(i + 1) % r.pts.length].x) / 2, y: (r.pts[i].y + r.pts[(i + 1) % r.pts.length].y) / 2 });
+  await tapAt(mid(rooms[0], 1));
+  log('selected wall shows grip:', !!$('.wall-grip'), '| bar:', $('.tb-where')?.textContent);
+  {
+    const m = mid(rooms[0], 1);
+    await ptr('pointerdown', m.x, m.y);
+    for (let i = 1; i <= 6; i++) await ptr('pointermove', m.x + i * 8, m.y);
+    await ptr('pointerup', m.x + 48, m.y);
+  }
+  const before = JSON.stringify(rooms[0].pts);
+  rooms = await curRoom();
+  log('slid wall, pts changed:', before !== JSON.stringify(rooms[0].pts), JSON.stringify(rooms[0].pts));
+  S = screenOf();
+  await tapAt(mid(rooms[0], 1));
+  await click(btn('Corner'), 'add corner');
+  rooms = await curRoom();
+  log('after add corner: corners', rooms[0].pts.length, '| bubble:', $('.bubble')?.textContent, '| toast:', $('.toast')?.textContent);
+  await click(btn('Delete corner'), 'delete corner');
+  rooms = await curRoom();
+  log('after delete corner: corners', rooms[0].pts.length, '| toast has undo:', !!$('.toast-undo'));
+  S = screenOf();
+  await tapAt(mid(rooms[0], 0));
+  await click($('button[aria-label="Delete this line"]'), 'delete line');
+  rooms = await curRoom();
+  log('after delete line: closed', rooms[0].closed, 'walls', rooms[0].pts.length - 1, '| toast:', $('.toast')?.textContent);
+  await click($('.toast-undo'), 'undo from toast');
+  rooms = await curRoom();
+  log('undo brings it back: closed', rooms[0].closed, 'corners', rooms[0].pts.length);
 }
 await click($('.job-btn'), 'drawer2');
 await click(btn('Erase all Plumb data'), 'wipe1');
