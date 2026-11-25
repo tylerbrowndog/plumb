@@ -1,0 +1,16 @@
+{
+  "name": "Plumb — sketch, measure, buy it once",
+  "short_name": "Plumb",
+  "description": "Sketch rooms, tap walls to measure, get the exact trim, flooring, tile and paint list. Private: everything stays on your phone.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#07090d",
+  "theme_color": "#07090d",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

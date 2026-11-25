@@ -1,0 +1,27 @@
+{
+  "name": "plumb",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/icons.mjs public && vite",
+    "build": "node scripts/icons.mjs public && vite build",
+    "check": "tsc -b",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "lucide-react": "0.460.0"
+  },
+  "devDependencies": {
+    "vite": "6.4.6",
+    "@vitejs/plugin-react": "4.7.0",
+    "typescript": "5.8.3",
+    "@types/react": "19.3.1",
+    "@types/react-dom": "19.3.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
