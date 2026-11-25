@@ -57,22 +57,21 @@ function draw(size, padFrac) {
       for (let sy = 0; sy < SS; sy++)
         for (let sx = 0; sx < SS; sx++) {
           const fx = (x + (sx + 0.5) / SS) / size, fy = (y + (sy + 0.5) / SS) / size;
-          let c = [7, 9, 13];
+          let c = [30, 34, 28];
           // rounded tile
           const qx = Math.max(Math.abs(fx - 0.5) - (0.5 - m - rr), 0), qy = Math.max(Math.abs(fy - 0.5) - (0.5 - m - rr), 0);
           if (Math.hypot(qx, qy) <= rr) {
-            const t = (fx + fy) / 2;
-            c = [76 + (138 - 76) * t, 194 + (125 - 194) * t, 255];
+            c = [255, 194, 14];
           }
           let dmin = Infinity;
           for (let i = 0; i < pts.length; i++) {
             const a = pts[i], b = pts[(i + 1) % pts.length];
             dmin = Math.min(dmin, segD(fx, fy, a[0], a[1], b[0], b[1]));
           }
-          if (dmin < lw) c = [7, 9, 13];
+          if (dmin < lw) c = [34, 39, 31];
           for (const p of pts) {
             const d = Math.hypot(fx - p[0], fy - p[1]);
-            if (d < dot) c = d < dot - 0.016 ? [255, 255, 255] : [7, 9, 13];
+            if (d < dot) c = d < dot - 0.016 ? [238, 242, 230] : [34, 39, 31];
           }
           R += c[0]; G += c[1]; B += c[2];
         }

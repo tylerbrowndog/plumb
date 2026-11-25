@@ -313,7 +313,7 @@ export function estimate(job: Job): Estimate {
       key: `trim-${p.key}`,
       name: p.name,
       qty: `${p.buy} × ${p.stickIn / 12}'`,
-      note: `${Math.ceil(p.needIn / 12)} LF needed · ${p.sticks.length} by cut list + ${p.buy - p.sticks.length} spare`,
+      note: `${Math.ceil(p.needIn / 12)} LF needed. ${p.sticks.length} for the cuts, ${p.buy - p.sticks.length} spare`,
     });
   }
 
@@ -456,11 +456,11 @@ function moreItems(job: Job, rooms: RoomStats[]) {
   if (lvpSqft > 0) {
     const need = lvpSqft * (1 + s.floorWastePct / 100);
     const boxes = Math.ceil(need / s.lvpBoxSqft);
-    items.push({ group: 'Flooring', key: 'lvp', name: `LVP flooring (${s.lvpBoxSqft} sq ft/box)`, qty: plural(boxes, 'box', 'boxes'), note: `${Math.round(lvpSqft)} sq ft + ${s.floorWastePct}% waste · buy one lot number` });
+    items.push({ group: 'Flooring', key: 'lvp', name: `LVP flooring (${s.lvpBoxSqft} sq ft/box)`, qty: plural(boxes, 'box', 'boxes'), note: `${Math.round(lvpSqft)} sq ft plus ${s.floorWastePct}% waste. Buy one lot number` });
     if (!s.padAttached) items.push({ group: 'Flooring', key: 'lvp-pad', name: 'Underlayment (100 sq ft roll)', qty: plural(Math.ceil(need / 100), 'roll'), note: 'skip if the planks have pad attached' });
   }
   if (doorways > 0 && lvpSqft + tileSqft > 0) {
-    items.push({ group: 'Flooring', key: 'transition', name: 'Transition strip (72")', qty: `${Math.ceil(doorways / 2)}`, note: `${plural(doorways, 'doorway')} · T-molding, reducer or end cap to match` });
+    items.push({ group: 'Flooring', key: 'transition', name: 'Transition strip (72")', qty: `${Math.ceil(doorways / 2)}`, note: `${plural(doorways, 'doorway')}. T-molding, reducer or end cap to match` });
   }
 
   // ---- tile
@@ -468,7 +468,7 @@ function moreItems(job: Job, rooms: RoomStats[]) {
     const need = tileSqft * (1 + s.tileWastePct / 100);
     const big = Math.max(s.tileWIn, s.tileLIn);
     const tiles = Math.ceil((need * 144) / (s.tileWIn * s.tileLIn));
-    items.push({ group: 'Tile', key: 'tile', name: `Tile ${frac(s.tileWIn)}" × ${frac(s.tileLIn)}" (${s.tileBoxSqft} sq ft/box)`, qty: plural(Math.ceil(need / s.tileBoxSqft), 'box', 'boxes'), note: `${Math.round(tileSqft)} sq ft + ${s.tileWastePct}% waste · about ${tiles} tiles` });
+    items.push({ group: 'Tile', key: 'tile', name: `Tile ${frac(s.tileWIn)}" × ${frac(s.tileLIn)}" (${s.tileBoxSqft} sq ft/box)`, qty: plural(Math.ceil(need / s.tileBoxSqft), 'box', 'boxes'), note: `${Math.round(tileSqft)} sq ft plus ${s.tileWastePct}% waste, about ${tiles} tiles` });
     const perBag = big >= 12 ? 45 : 90;
     items.push({ group: 'Tile', key: 'thinset', name: big >= 15 ? 'Large-format thinset (50 lb)' : 'Modified thinset (50 lb)', qty: plural(Math.ceil(tileSqft / perBag), 'bag'), note: big >= 12 ? '½" notch trowel, back-butter big tile' : '¼" notch trowel' });
     // grout: joint volume per sq ft, ~0.065 lb per cubic inch, +15%

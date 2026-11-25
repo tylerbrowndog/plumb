@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Plus, Download, Upload, Trash2, X, ShieldCheck, Copy, Sparkles } from 'lucide-react';
+import { Plus, Download, Upload, Trash2, X, ShieldCheck, Copy, MoreHorizontal, Pencil } from 'lucide-react';
 import type { Job } from './types';
 import { downloadJSON, parseImport } from './store';
 import { uid } from './geometry';
@@ -33,6 +33,7 @@ export default function Jobs({
   const [editing, setEditing] = useState<string | null>(null);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
   const framed = (() => {
     try {
       return window.self !== window.top;
@@ -58,15 +59,15 @@ export default function Jobs({
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+      <div className="drawer" role="dialog" aria-modal="true" aria-label="Jobs" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-head">
           <div>
             <div className="brand">
               <span className="logo" /> Plumb
             </div>
-            <div className="muted small">Sketch. Measure. Buy it once.</div>
+            <div className="muted small">Your jobs, saved on this phone</div>
           </div>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
+          <button className="icon-btn" onClick={onClose} aria-label="Close" autoFocus>
             <X size={20} />
           </button>
         </div>
@@ -75,50 +76,67 @@ export default function Jobs({
             <Plus size={18} /> New job
           </button>
           <button className="btn" onClick={onSample}>
-            <Sparkles size={17} /> Sample
+            Sample
           </button>
         </div>
         <div className="job-list">
           {sorted.map((j) => (
-            <div key={j.id} className={`job ${j.id === current ? 'cur' : ''}`}>
-              {editing === j.id ? (
-                <input
-                  className="name-input job-edit"
-                  autoFocus
-                  defaultValue={j.name}
-                  maxLength={80}
-                  aria-label="Job name"
-                  onBlur={(e) => {
-                    if (e.target.value.trim()) onRename(j.id, e.target.value.trim());
-                    setEditing(null);
+            <div key={j.id} className={`job ${j.id === current ? 'cur' : ''} ${open === j.id ? 'open' : ''}`}>
+              <div className="job-row">
+                {editing === j.id ? (
+                  <input
+                    className="name-input job-edit"
+                    autoFocus
+                    defaultValue={j.name}
+                    maxLength={80}
+                    aria-label="Job name"
+                    onBlur={(e) => {
+                      if (e.target.value.trim()) onRename(j.id, e.target.value.trim());
+                      setEditing(null);
+                    }}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                  />
+                ) : (
+                  <button className="job-main" onClick={() => onOpen(j.id)} aria-current={j.id === current ? 'true' : undefined}>
+                    <span className="job-name">{j.name}</span>
+                    <span className="muted small">
+                      {j.rooms.length} {j.rooms.length === 1 ? 'room' : 'rooms'}, edited {date(j.updatedAt)}
+                    </span>
+                  </button>
+                )}
+                <button
+                  className="icon-btn more"
+                  aria-label={`More for ${j.name}`}
+                  aria-expanded={open === j.id}
+                  onClick={() => {
+                    setOpen(open === j.id ? null : j.id);
+                    setConfirmDel(null);
                   }}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                />
-              ) : (
-              <button className="job-main" onClick={() => onOpen(j.id)}>
-                <span className="job-name">{j.name}</span>
-                <span className="muted small">
-                  {j.rooms.length} {j.rooms.length === 1 ? 'room' : 'rooms'} · {date(j.updatedAt)}
-                </span>
-              </button>
-              )}
-              <button className="icon-btn sm" aria-label="Rename" onClick={() => setEditing(j.id)}>
-                ✎
-              </button>
-              <button className="icon-btn sm" aria-label={`Export ${j.name}`} onClick={() => backup([j])}>
-                <Download size={16} />
-              </button>
-              <button className="icon-btn sm" aria-label="Duplicate" onClick={() => onImport([{ ...structuredClone(j), id: uid(), name: j.name + ' copy', updatedAt: Date.now() }])}>
-                <Copy size={16} />
-              </button>
-              {confirmDel === j.id ? (
-                <button className="btn del-confirm" onClick={() => { onDelete(j.id); setConfirmDel(null); }}>
-                  Delete
+                >
+                  <MoreHorizontal size={20} />
                 </button>
-              ) : (
-                <button className="icon-btn sm" aria-label="Delete" onClick={() => setConfirmDel(j.id)}>
-                  <Trash2 size={16} />
-                </button>
+              </div>
+              {open === j.id && (
+                <div className="job-actions">
+                  <button className="act" onClick={() => setEditing(j.id)}>
+                    <Pencil size={17} /> Rename
+                  </button>
+                  <button className="act" onClick={() => backup([j])}>
+                    <Download size={17} /> Export
+                  </button>
+                  <button className="act" onClick={() => onImport([{ ...structuredClone(j), id: uid(), name: j.name + ' copy', updatedAt: Date.now() }])}>
+                    <Copy size={17} /> Duplicate
+                  </button>
+                  {confirmDel === j.id ? (
+                    <button className="act danger" onClick={() => { onDelete(j.id); setConfirmDel(null); setOpen(null); }}>
+                      <Trash2 size={17} /> Tap again to delete
+                    </button>
+                  ) : (
+                    <button className="act" onClick={() => setConfirmDel(j.id)}>
+                      <Trash2 size={17} /> Delete
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           ))}
@@ -152,7 +170,7 @@ export default function Jobs({
         </div>
         {confirmWipe ? (
           <div className="wipe">
-            <span>Erase every job on this phone? Back up first if you want to keep them.</span>
+            <span>This erases every job on this phone and can't be undone. Back up first if you want to keep them.</span>
             <div className="row gap">
               <button className="btn grow" onClick={() => setConfirmWipe(false)}>
                 Keep
@@ -169,9 +187,7 @@ export default function Jobs({
         )}
         <div className="privacy">
           <ShieldCheck size={20} />
-          <div>
-            <b>Private by design.</b> Jobs live only on this phone. No account, no cloud, no AI, no tracking. Back up to a file whenever you want.
-          </div>
+          <div>Jobs live only on this phone. No account, no cloud, no AI, no tracking. Back up to a file whenever you want.</div>
         </div>
       </div>
     </div>

@@ -82,22 +82,25 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
     else setTxt((t) => (t + k).replace(/\s{2,}/g, ' '));
   };
 
+  const KEY_NAMES: Record<string, string | undefined> = { "'": 'feet', '"': 'inches', '/': 'fraction', ' ': 'space', '.': 'decimal point', del: 'Delete last character' };
   const keys = ['7', '8', '9', "'", '4', '5', '6', '"', '1', '2', '3', '/', ' ', '0', '.', 'del'];
 
   return (
-    <div className="sheet wall-sheet">
+    <div className="sheet wall-sheet" role="region" aria-label={`Measure ${room.name}, wall ${wall + 1}`}>
       <div className="sheet-head">
         <button className="icon-btn" onClick={() => go(-1)} aria-label="Previous wall">
           <ChevronLeft size={22} />
         </button>
         <div className="sheet-title">
           <div className="eyebrow">
-            {room.name} · Wall {wall + 1} of {n}
+            {room.name}, wall {wall + 1} of {n}
           </div>
+          <div aria-live="polite" className={`readout ${txt ? (parsed != null ? 'typed-ok' : 'typed-bad') : verified ? 'measured' : 'est'}`}>
           <div className={`big-len ${verified ? 'ok' : ''}`}>
             {txt ? (parsed != null ? fmtFtIn(parsed) : <span className="bad">{txt}</span>) : (verified ? '' : '~') + fmtFtIn(len)}
           </div>
-          <div className="sub">{txt ? <span className="typed">typed: {txt}</span> : verified ? <span className="okc"><Check size={13} /> Measured</span> : job.scaleSet ? 'Estimated from drawing. Type the real length.' : 'Type this wall’s real length to set the scale.'}</div>
+          </div>
+          <div className="sub">{txt ? parsed != null ? <span className="typed">You typed {txt}</span> : <span className="bad-msg">Not a length yet. Try 12 6 or 12' 6 1/2"</span> : verified ? <span className="okc"><Check size={13} /> Measured</span> : job.scaleSet ? 'Estimated from your sketch. Type the tape.' : 'Type this wall’s tape length. It sets the scale for the whole job.'}</div>
         </div>
         <button className="icon-btn" onClick={() => go(1)} aria-label="Next wall">
           <ChevronRight size={22} />
@@ -109,7 +112,7 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
 
       <div className="keypad">
         {keys.map((k) => (
-          <button key={k} className={`key ${/\d/.test(k) ? 'num' : 'sym'}`} onClick={() => key(k)}>
+          <button key={k} className={`key ${/\d/.test(k) ? 'num' : 'sym'}`} onClick={() => key(k)} aria-label={KEY_NAMES[k]}>
             {k === 'del' ? <Delete size={20} /> : k === ' ' ? 'space' : k === "'" ? 'ft' + " '" : k === '"' ? 'in "' : k}
           </button>
         ))}
@@ -130,7 +133,8 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
           </button>
         )}
       </div>
-      <div className="chips">
+      <div className="chips" role="group" aria-label="Add to this wall">
+        <span className="chips-label">Add</span>
         <button className="chip" onClick={() => addOpening(job, room, wall, 'door', commit)}>
           <DoorOpen size={16} /> Door
         </button>
@@ -140,6 +144,8 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
         <button className="chip" onClick={() => addOpening(job, room, wall, 'opening', commit)}>
           <RectangleHorizontal size={16} /> Opening
         </button>
+      </div>
+      <div className="chips">
         <button
           className={`chip ${w.noBase ? 'on' : ''}`}
           onClick={() =>
@@ -152,15 +158,15 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
             )
           }
         >
-          {w.noBase ? <Check size={15} /> : null} No base here
+          {w.noBase ? <Check size={15} /> : null} No baseboard here
         </button>
         {txt && parsed ? (
           <button className="chip" onClick={() => save(parsed, true)}>
-            <Scale size={15} /> Save + rescale drawing
+            <Scale size={15} /> Save and rescale
           </button>
         ) : verified && job.scaleSet ? (
           <button className="chip" onClick={() => w.lengthIn && save(w.lengthIn, true)}>
-            <Scale size={15} /> Use as scale
+            <Scale size={15} /> Set scale from this wall
           </button>
         ) : null}
         {verified && (
@@ -176,7 +182,7 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose }: { 
               )
             }
           >
-            Unmeasure
+            Clear length
           </button>
         )}
       </div>
@@ -211,7 +217,7 @@ export function RoomSheet({ job, room, commit, onMeasure, onClose, onDelete }: {
   }
   const toggle = (k: 'base' | 'shoe' | 'crown') => commit((j) => updRoom(j, room.id, (r) => ({ ...r, [k]: !r[k] })));
   return (
-    <div className="sheet">
+    <div className="sheet" role="region" aria-label={`Room: ${room.name}`}>
       <div className="sheet-head">
         <input className="name-input" maxLength={60} value={room.name} onChange={(e) => commit((j) => updRoom(j, room.id, (r) => ({ ...r, name: e.target.value })))} aria-label="Room name" />
         <button className="icon-btn close" onClick={onClose} aria-label="Close">
@@ -221,7 +227,7 @@ export function RoomSheet({ job, room, commit, onMeasure, onClose, onDelete }: {
       <div className="stats">
         <div>
           <b>{fmtFtIn(perim)}</b>
-          <span>{room.closed ? 'perimeter' : 'run'}</span>
+          <span>{room.closed ? 'around the room' : 'total run'}</span>
         </div>
         <div>
           <b>
@@ -231,7 +237,7 @@ export function RoomSheet({ job, room, commit, onMeasure, onClose, onDelete }: {
         </div>
         <div>
           <b>{job.openings.filter((o) => o.room === room.id).length}</b>
-          <span>doors + windows</span>
+          <span>doors and windows</span>
         </div>
       </div>
       <div className="field-label">Trim</div>
@@ -292,11 +298,11 @@ export function OpeningSheet({ job, o, commit, onClose }: { job: Job; o: Opening
   }, [o.id, o.widthIn, o.heightIn]);
   const label = o.type === 'door' ? 'Door' : o.type === 'window' ? 'Window' : 'Cased opening';
   return (
-    <div className="sheet">
+    <div className="sheet" role="region" aria-label={label}>
       <div className="sheet-head">
         <div className="sheet-title">
           <div className="eyebrow">
-            {room?.name} · Wall {o.wall + 1}
+            {room?.name}, wall {o.wall + 1}
           </div>
           <div className="h2">{label}</div>
         </div>
@@ -311,7 +317,7 @@ export function OpeningSheet({ job, o, commit, onClose }: { job: Job; o: Opening
           </button>
         ))}
       </div>
-      <div className="field-label">Width (inches){o.type === 'door' ? ' · door slab size' : ''}</div>
+      <div className="field-label">{o.type === 'door' ? 'Door slab width, inches' : 'Width, inches'}</div>
       <div className="chips tight">
         {widths.map((wd) => (
           <button key={wd} className={`chip ${o.widthIn === wd ? 'on' : ''}`} onClick={() => set({ widthIn: wd })}>
@@ -330,7 +336,7 @@ export function OpeningSheet({ job, o, commit, onClose }: { job: Job; o: Opening
           aria-label="Width in inches"
         />
       </div>
-      <div className="field-label">Height (inches)</div>
+      <div className="field-label">Height, inches</div>
       <div className="chips tight">
         {(o.type === 'window' ? WIN_H : [80, 84, 96]).map((h) => (
           <button key={h} className={`chip ${o.heightIn === h ? 'on' : ''}`} onClick={() => set({ heightIn: h })}>
@@ -367,7 +373,7 @@ export function OpeningSheet({ job, o, commit, onClose }: { job: Job; o: Opening
           Done
         </button>
       </div>
-      <div className="hint-small">Drag the dot to slide it along the wall.</div>
+      <div className="hint-small">Drag the blue dot on the plan to slide it along the wall.</div>
     </div>
   );
 }

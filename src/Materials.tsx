@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Check, Copy, MessageSquare, Share2, ChevronDown, Ruler, AlertTriangle, Scissors } from 'lucide-react';
+import { Check, Copy, MessageSquare, Share2, ChevronDown, Ruler, Scissors } from 'lucide-react';
 import type { Job, Settings } from './types';
 import { GROUP_ORDER, dontForget, estimate, frac, type Estimate } from './estimate';
 import { fmtFtIn } from './units';
@@ -8,7 +8,7 @@ type Commit = (fn: (j: Job) => Job) => void;
 
 export function shoppingText(job: Job, est: Estimate) {
   const lines: string[] = [];
-  lines.push(`${job.name} — trim list`);
+  lines.push(`${job.name}: materials list`);
   if (est.verifiedWalls < est.totalWalls) lines.push(`(${est.totalWalls - est.verifiedWalls} of ${est.totalWalls} walls still estimated)`);
   for (const g of GROUP_ORDER) {
     const its = est.items.filter((it) => it.group === g && !job.checks['buy-' + it.key]);
@@ -35,12 +35,11 @@ export default function Materials({ job, commit, onVerify, toast }: { job: Job; 
   const pct = est.totalWalls ? Math.round((est.verifiedWalls / est.totalWalls) * 100) : 0;
   const text = shoppingText(job, est);
   const facts: { label: string; value: string }[] = [];
-  if (est.scopes.trim) facts.push({ label: 'baseboard', value: `${Math.ceil(est.baseIn / 12)} LF` });
-  if (est.newDoors) facts.push({ label: est.newDoors === 1 ? 'new door' : 'new doors', value: `${est.newDoors}` });
-  if (est.lvpSqft) facts.push({ label: 'LVP', value: `${Math.round(est.lvpSqft)} sq ft` });
-  if (est.tileSqft) facts.push({ label: 'tile', value: `${Math.round(est.tileSqft)} sq ft` });
-  if (est.wallSqft + est.ceilingSqft) facts.push({ label: 'to paint', value: `${Math.round(est.wallSqft + est.ceilingSqft)} sq ft` });
-  const lead = facts[0] ? { label: facts[0].label === 'baseboard' ? 'Baseboard needed' : facts[0].label, value: facts[0].value } : { label: 'Nothing picked yet', value: '0' };
+  if (est.scopes.trim) facts.push({ label: 'Baseboard', value: `${Math.ceil(est.baseIn / 12)} LF` });
+  if (est.newDoors) facts.push({ label: est.newDoors === 1 ? 'New door' : 'New doors', value: `${est.newDoors}` });
+  if (est.lvpSqft) facts.push({ label: 'LVP floor', value: `${Math.round(est.lvpSqft)} sq ft` });
+  if (est.tileSqft) facts.push({ label: 'Tile', value: `${Math.round(est.tileSqft)} sq ft` });
+  if (est.wallSqft + est.ceilingSqft) facts.push({ label: 'Paint area', value: `${Math.round(est.wallSqft + est.ceilingSqft)} sq ft` });
   const forget = dontForget(est.scopes);
   const check = (k: string) => commit((j) => ({ ...j, checks: { ...j.checks, [k]: !j.checks[k] } }));
 
@@ -68,45 +67,45 @@ export default function Materials({ job, commit, onVerify, toast }: { job: Job; 
       <div className="mat empty">
         <Ruler size={36} />
         <h2>No rooms yet</h2>
-        <p>Sketch a room on the Plan tab and your trim list shows up here.</p>
+        <p>Sketch a room on the Plan tab. Your list builds itself as you measure.</p>
       </div>
     );
 
   return (
     <div className="mat">
-      <div className="card hero">
-        <div className="hero-top">
-          <div>
-            <div className="eyebrow">{lead.label}</div>
-            <div className="hero-num">{lead.value}</div>
-          </div>
-          <div className="ring" style={{ ['--p' as string]: pct }} role="img" aria-label={`${pct}% of walls measured`}>
-            <span>{pct}%</span>
-          </div>
-        </div>
-        <div className="hero-sub">
-          {job.rooms.length} {job.rooms.length === 1 ? 'room' : 'rooms'} · {est.verifiedWalls}/{est.totalWalls} walls measured
-        </div>
-        {facts.length > 1 && (
-          <div className="facts">
+      <section className="card hero" aria-label="Job summary">
+        <h1 className="sr-only">Materials for {job.name}</h1>
+        {facts.length > 0 ? (
+          <dl className="facts">
             {facts.map((f) => (
-              <span key={f.label}>
-                <b>{f.value}</b> {f.label}
-              </span>
+              <div key={f.label}>
+                <dt>{f.label}</dt>
+                <dd>{f.value}</dd>
+              </div>
             ))}
-          </div>
+          </dl>
+        ) : (
+          <p className="hero-sub">Tap a room on the plan and pick baseboard, flooring or paint.</p>
         )}
+        <div className="hero-progress">
+          <span className="tape-progress lg" role="img" aria-label={`${pct}% of walls measured`}>
+            <span style={{ width: `${pct}%` }} />
+          </span>
+          <span className="hero-sub">
+            {est.verifiedWalls === est.totalWalls ? `All ${est.totalWalls} walls measured in ${job.rooms.length} ${job.rooms.length === 1 ? 'room' : 'rooms'}` : `${est.verifiedWalls} of ${est.totalWalls} walls measured. The rest are estimated from your sketch.`}
+          </span>
+        </div>
         {est.verifiedWalls < est.totalWalls && (
           <button className="btn warn full" onClick={onVerify}>
-            <AlertTriangle size={17} /> Measure {est.totalWalls - est.verifiedWalls} more {est.totalWalls - est.verifiedWalls === 1 ? 'wall' : 'walls'} to lock this in
+            <Ruler size={18} /> Measure the last {est.totalWalls - est.verifiedWalls} {est.totalWalls - est.verifiedWalls === 1 ? 'wall' : 'walls'}
           </button>
         )}
-      </div>
+      </section>
 
       <div className="card">
         <div className="card-head">
-          <h3>Shopping list</h3>
-          <span className="muted small">tap what you already have</span>
+          <h2 className="sec-title">Shopping list</h2>
+          <span className="muted small">Tap what you already have</span>
         </div>
         {est.items.length === 0 && <p className="muted small pad">Tap a room on the Plan tab and turn on baseboard, flooring or paint.</p>}
         {GROUP_ORDER.map((g) => {
@@ -114,7 +113,9 @@ export default function Materials({ job, commit, onVerify, toast }: { job: Job; 
           if (!its.length) return null;
           return (
             <div key={g} className="group">
-              <div className="group-head">{g}</div>
+              <h3 className="group-head">
+                {g} <span>{its.length}</span>
+              </h3>
               {its.map((it) => {
                 const on = !!job.checks['buy-' + it.key];
                 return (
@@ -131,26 +132,15 @@ export default function Materials({ job, commit, onVerify, toast }: { job: Job; 
             </div>
           );
         })}
-        <div className="row gap share-row">
-          <button className="btn primary grow" onClick={copy}>
-            <Copy size={17} /> Copy list
-          </button>
-          <a className="btn" href={sms} aria-label="Text the list">
-            <MessageSquare size={17} />
-          </a>
-          <button className="btn" onClick={share} aria-label="Share the list">
-            <Share2 size={17} />
-          </button>
-        </div>
       </div>
 
       {est.profiles.length > 0 && (
         <div className="card">
           <div className="card-head">
-            <h3>
-              <Scissors size={16} /> Cut list
-            </h3>
-            <span className="muted small">optimized per stick</span>
+            <h2 className="sec-title">
+              <Scissors size={18} /> Cut list
+            </h2>
+            <span className="muted small">What to cut from each stick</span>
           </div>
           {est.profiles.map((p) => (
             <div key={p.key} className="cut">
@@ -159,7 +149,7 @@ export default function Materials({ job, commit, onVerify, toast }: { job: Job; 
                   <b>{p.name}</b>
                   <span className="muted small">
                     {' '}
-                    · {p.sticks.length} × {p.stickIn / 12}' sticks
+                    {p.sticks.length} × {p.stickIn / 12}' sticks
                   </span>
                 </span>
                 <ChevronDown size={18} className={openCut === p.key ? 'rot' : ''} />
@@ -168,14 +158,14 @@ export default function Materials({ job, commit, onVerify, toast }: { job: Job; 
                 <div className="sticks">
                   {p.sticks.map((s, i) => (
                     <div key={i} className="stick">
-                      <div className="stick-bar">
+                      <div className="stick-bar" aria-hidden>
                         {s.pieces.map((pc, k) => (
                           <span key={k} style={{ width: `${(pc.len / p.stickIn) * 100}%` }} title={pc.label} />
                         ))}
                       </div>
                       <div className="stick-txt">
-                        <b>#{i + 1}</b> {s.pieces.map((pc) => `${pc.label} ${fmtFtIn(pc.len)}`).join(' · ')}
-                        <span className="muted"> · offcut {fmtFtIn(Math.max(0, s.left))}</span>
+                        <b>Stick {i + 1}:</b> {s.pieces.map((pc) => `${pc.label} ${fmtFtIn(pc.len)}`).join(', ')}
+                        <span className="muted">. Offcut {fmtFtIn(Math.max(0, s.left))}</span>
                       </div>
                     </div>
                   ))}
@@ -189,7 +179,7 @@ export default function Materials({ job, commit, onVerify, toast }: { job: Job; 
 
       <div className="card">
         <div className="card-head">
-          <h3>Rooms</h3>
+          <h2 className="sec-title">Rooms</h2>
         </div>
         <div className="rooms-table">
           {est.rooms.map((r) => (
@@ -219,8 +209,8 @@ export default function Materials({ job, commit, onVerify, toast }: { job: Job; 
 
       <div className="card">
         <div className="card-head">
-          <h3>Don't forget</h3>
-          <span className="muted small">tap when it's on the truck</span>
+          <h2 className="sec-title">Don't forget</h2>
+          <span className="muted small">Tap when it's on the truck</span>
         </div>
         {forget.map((d) => {
           const on = !!job.checks['df-' + d.key];
@@ -238,96 +228,107 @@ export default function Materials({ job, commit, onVerify, toast }: { job: Job; 
 
       <div className="card">
         <button className="cut-head" onClick={() => setShowSettings(!showSettings)}>
-          <h3>Assumptions</h3>
+          <h2 className="sec-title">Assumptions</h2>
           <ChevronDown size={18} className={showSettings ? 'rot' : ''} />
         </button>
         {showSettings && <SettingsForm s={job.settings} set={(p) => commit((j) => ({ ...j, settings: { ...j.settings, ...p } }))} />}
       </div>
       <div className="foot">Everything stays on this phone. No account, no AI, no tracking.</div>
+      <div className="act-bar">
+        <button className="btn primary grow" onClick={copy}>
+          <Copy size={18} /> Copy list
+        </button>
+        <a className="btn sq" href={sms} aria-label="Text the list">
+          <MessageSquare size={19} />
+        </a>
+        <button className="btn sq" onClick={share} aria-label="Share the list">
+          <Share2 size={19} />
+        </button>
+      </div>
     </div>
   );
 }
 
 function SettingsForm({ s, set }: { s: Settings; set: (p: Partial<Settings>) => void }) {
-  const Seg = ({ k, opts, suffix = "'", fmt }: { k: keyof Settings; opts: number[]; suffix?: string; fmt?: (o: number) => string }) => (
-    <div className="seg-sm">
+  const Seg = ({ name, k, opts, suffix = "'", fmt }: { name: string; k: keyof Settings; opts: number[]; suffix?: string; fmt?: (o: number) => string }) => (
+    <div className="seg-sm" role="group" aria-label={name}>
       {opts.map((o) => (
-        <button key={o} className={s[k] === o ? 'on' : ''} onClick={() => set({ [k]: o } as Partial<Settings>)}>
+        <button key={o} className={s[k] === o ? 'on' : ''} aria-pressed={s[k] === o} onClick={() => set({ [k]: o } as Partial<Settings>)}>
           {fmt ? fmt(o) : Number.isInteger(o) ? o : frac(o)}
           {fmt ? '' : suffix}
         </button>
       ))}
     </div>
   );
-  const Num = ({ k, step = 1 }: { k: keyof Settings; step?: number }) => (
-    <div className="stepper">
-      <button aria-label="Less" onClick={() => set({ [k]: Math.max(step, +((s[k] as number) - step).toFixed(3)) } as Partial<Settings>)}>−</button>
-      <span>{s[k] as number}</span>
-      <button aria-label="More" onClick={() => set({ [k]: +((s[k] as number) + step).toFixed(3) } as Partial<Settings>)}>+</button>
+  const Num = ({ name, k, step = 1 }: { name: string; k: keyof Settings; step?: number }) => (
+    <div className="stepper" role="group" aria-label={name}>
+      <button aria-label={`Less ${name.toLowerCase()}`} onClick={() => set({ [k]: Math.max(step, +((s[k] as number) - step).toFixed(3)) } as Partial<Settings>)}>−</button>
+      <span aria-live="polite">{s[k] as number}</span>
+      <button aria-label={`More ${name.toLowerCase()}`} onClick={() => set({ [k]: +((s[k] as number) + step).toFixed(3) } as Partial<Settings>)}>+</button>
     </div>
   );
-  const Tog = ({ k }: { k: keyof Settings }) => (
-    <button className={`switch ${s[k] ? 'on' : ''}`} onClick={() => set({ [k]: !s[k] } as Partial<Settings>)} aria-pressed={!!s[k]}>
+  const Tog = ({ name, k }: { name: string; k: keyof Settings }) => (
+    <button role="switch" aria-checked={!!s[k]} aria-label={name} className={`switch ${s[k] ? 'on' : ''}`} onClick={() => set({ [k]: !s[k] } as Partial<Settings>)} >
       <span />
     </button>
   );
   return (
     <div className="settings">
       <label>Extra for mistakes (%)</label>
-      <Num k="wastePct" step={5} />
+      <Num name="Extra for mistakes (%)" k="wastePct" step={5} />
       <label>Baseboard stick</label>
-      <Seg k="baseStickFt" opts={[8, 12, 16]} />
+      <Seg name="Baseboard stick" k="baseStickFt" opts={[8, 12, 16]} />
       <label>Casing stick</label>
-      <Seg k="casingStickFt" opts={[7, 8, 14, 16]} />
+      <Seg name="Casing stick" k="casingStickFt" opts={[7, 8, 14, 16]} />
       <label>Shoe stick</label>
-      <Seg k="shoeStickFt" opts={[8, 12, 16]} />
+      <Seg name="Shoe stick" k="shoeStickFt" opts={[8, 12, 16]} />
       <label>Crown stick</label>
-      <Seg k="crownStickFt" opts={[8, 12, 16]} />
+      <Seg name="Crown stick" k="crownStickFt" opts={[8, 12, 16]} />
       <label>Baseboard height (in)</label>
-      <Seg k="baseHeightIn" opts={[3.25, 4.25, 5.25, 7.25]} suffix='"' />
+      <Seg name="Baseboard height (in)" k="baseHeightIn" opts={[3.25, 4.25, 5.25, 7.25]} suffix='"' />
       <label>Casing width (in)</label>
-      <Seg k="casingWidthIn" opts={[2.25, 2.5, 3.25, 3.5]} suffix='"' />
+      <Seg name="Casing width (in)" k="casingWidthIn" opts={[2.25, 2.5, 3.25, 3.5]} suffix='"' />
       <label>Default door (in)</label>
-      <Seg k="doorWidthIn" opts={[28, 30, 32, 36]} suffix='"' />
+      <Seg name="Default door (in)" k="doorWidthIn" opts={[28, 30, 32, 36]} suffix='"' />
       <label>Case windows</label>
-      <Tog k="windowCasing" />
+      <Tog name="Case windows" k="windowCasing" />
       <label>Paint the trim</label>
-      <Tog k="paint" />
+      <Tog name="Paint the trim" k="paint" />
       <label>Trim is pre-primed</label>
-      <Tog k="primed" />
+      <Tog name="Trim is pre-primed" k="primed" />
       <label>Paint coats</label>
-      <Num k="coats" />
+      <Num name="Paint coats" k="coats" />
       <label>Caulk: feet per tube</label>
-      <Num k="caulkFtPerTube" step={5} />
+      <Num name="Caulk: feet per tube" k="caulkFtPerTube" step={5} />
       <label>Extra per cut (in)</label>
-      <Num k="cutAllowanceIn" step={0.5} />
+      <Num name="Extra per cut (in)" k="cutAllowanceIn" step={0.5} />
       <div className="settings-head">Walls and ceilings</div>
       <label>Ceiling height</label>
-      <Seg k="ceilingIn" opts={[96, 108, 120]} fmt={(o) => `${o / 12}'`} />
+      <Seg name="Ceiling height" k="ceilingIn" opts={[96, 108, 120]} fmt={(o) => `${o / 12}'`} />
       <label>Wall paint coats</label>
-      <Num k="wallCoats" />
+      <Num name="Wall paint coats" k="wallCoats" />
       <label>New drywall (prime)</label>
-      <Tog k="newDrywall" />
+      <Tog name="New drywall (prime)" k="newDrywall" />
       <div className="settings-head">Flooring</div>
       <label>LVP sq ft per box</label>
-      <Num k="lvpBoxSqft" step={0.5} />
+      <Num name="LVP sq ft per box" k="lvpBoxSqft" step={0.5} />
       <label>Floor waste (%)</label>
-      <Num k="floorWastePct" step={5} />
+      <Num name="Floor waste (%)" k="floorWastePct" step={5} />
       <label>Pad attached to planks</label>
-      <Tog k="padAttached" />
+      <Tog name="Pad attached to planks" k="padAttached" />
       <div className="settings-head">Tile</div>
       <label>Tile width (in)</label>
-      <Seg k="tileWIn" opts={[3, 6, 12, 24]} suffix='"' />
+      <Seg name="Tile width (in)" k="tileWIn" opts={[3, 6, 12, 24]} suffix='"' />
       <label>Tile length (in)</label>
-      <Seg k="tileLIn" opts={[6, 12, 24, 48]} suffix='"' />
+      <Seg name="Tile length (in)" k="tileLIn" opts={[6, 12, 24, 48]} suffix='"' />
       <label>Tile sq ft per box</label>
-      <Num k="tileBoxSqft" step={0.5} />
+      <Num name="Tile sq ft per box" k="tileBoxSqft" step={0.5} />
       <label>Tile waste (%)</label>
-      <Num k="tileWastePct" step={1} />
+      <Num name="Tile waste (%)" k="tileWastePct" step={1} />
       <label>Grout joint</label>
-      <Seg k="groutJointIn" opts={[0.0625, 0.125, 0.1875, 0.25]} suffix='"' />
+      <Seg name="Grout joint" k="groutJointIn" opts={[0.0625, 0.125, 0.1875, 0.25]} suffix='"' />
       <label>Cement board under tile</label>
-      <Tog k="backer" />
+      <Tog name="Cement board under tile" k="backer" />
     </div>
   );
 }

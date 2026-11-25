@@ -19,11 +19,11 @@ const TOOLS: { t: Tool; icon: typeof PenLine; label: string }[] = [
 ];
 
 const HINTS: Record<Tool, string> = {
-  select: 'Tap a wall to measure it. Drag corners to adjust.',
-  draw: 'Draw a room with one finger. It snaps straight and square.',
-  rect: 'Drag to draw a box room. Start on a corner to attach rooms.',
-  door: 'Tap a wall to drop a door.',
-  window: 'Tap a wall to drop a window.',
+  select: 'Tap a wall to measure it. Drag a corner to move it.',
+  draw: 'Draw with one finger. Lines snap straight and square.',
+  rect: 'Drag corner to corner for a square room. Start on a corner to attach it.',
+  door: 'Tap a wall to add a door.',
+  window: 'Tap a wall to add a window.',
 };
 
 function initial() {
@@ -117,6 +117,11 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (drawer) setDrawer(false);
+        else if (sel) setSel(null);
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -128,21 +133,21 @@ export default function App() {
   });
 
   // ----- view helpers -----
-  const sheetH = sel ? (sel.kind === 'wall' ? mainSize.h * 0.58 : sel.kind === 'room' ? Math.min(mainSize.h * 0.8, 440) : 340) : 70;
+  const sheetH = sel ? (sel.kind === 'wall' ? Math.min(mainSize.h * 0.86, 610) : sel.kind === 'room' ? Math.min(mainSize.h * 0.8, 440) : 340) : 70;
   const fit = useCallback(
     (j: Job = jobRef.current) => {
       const b = bounds(j);
-      const availW = mainSize.w - 80;
-      const availH = mainSize.h - 150;
+      const availW = mainSize.w - 94;
+      const availH = mainSize.h - 72 - 168;
       if (!b) {
         const k = (mainSize.w * 0.55) / 144;
-        setView({ k, x: mainSize.w / 2 - 72 * k + 20, y: mainSize.h * 0.42 - 60 * k });
+        setView({ k, x: mainSize.w / 2 - 72 * k, y: mainSize.h * 0.4 - 60 * k });
         return;
       }
       const bw = Math.max(24, b.maxX - b.minX),
         bh = Math.max(24, b.maxY - b.minY);
       const k = Math.min(availW / bw, availH / bh, 8);
-      setView({ k, x: 64 + (availW - bw * k) / 2 - b.minX * k + 8, y: 60 + (availH - bh * k) / 2 - b.minY * k });
+      setView({ k, x: 24 + (availW - bw * k) / 2 - b.minX * k, y: 72 + (availH - bh * k) / 2 - b.minY * k });
     },
     [mainSize],
   );
@@ -166,10 +171,10 @@ export default function App() {
     setView((v) => {
       const sx = m.x * v.k + v.x,
         sy = m.y * v.k + v.y;
-      const top = 70,
+      const top = 24,
         bottom = mainSize.h - sheetH - 30;
-      if (sy > top && sy < bottom && sx > 70 && sx < mainSize.w - 20) return v;
-      const tx = (mainSize.w + 56) / 2,
+      if (sy > top && sy < bottom && sx > 24 && sx < mainSize.w - 70) return v;
+      const tx = (mainSize.w - 46) / 2,
         ty = top + (bottom - top) / 2;
       return { ...v, x: v.x + (tx - sx), y: v.y + (ty - sy) };
     });
@@ -183,6 +188,13 @@ export default function App() {
 
   const est = useMemo(() => estimate(job), [job]);
   const unverified = est.totalWalls - est.verifiedWalls;
+  // the moment the last wall gets its tape length, say so once
+  const prevUnverified = useRef<{ id: string; n: number }>({ id: curId, n: unverified });
+  useEffect(() => {
+    const p = prevUnverified.current;
+    if (p.id === curId && p.n > 0 && unverified === 0 && est.totalWalls > 0) toast('Every wall is measured. Your list is exact.');
+    prevUnverified.current = { id: curId, n: unverified };
+  }, [curId, unverified, est.totalWalls, toast]);
 
   const openJob = (id: string) => {
     setCurId(id);
@@ -199,16 +211,16 @@ export default function App() {
   return (
     <div className="app">
       <header className="top">
-        <button className="job-btn" onClick={() => setDrawer(true)}>
+        <button className="job-btn" onClick={() => setDrawer(true)} aria-label={`Jobs. Current job: ${job.name}`}>
           <Menu size={20} />
           <span className="job-title">{job.name}</span>
           <ChevronDown size={16} className="muted" />
         </button>
-        <div className="tabs">
-          <button className={tab === 'plan' ? 'on' : ''} onClick={() => setTab('plan')}>
+        <div className="tabs" role="group" aria-label="View">
+          <button className={tab === 'plan' ? 'on' : ''} onClick={() => setTab('plan')} aria-pressed={tab === 'plan'}>
             Plan
           </button>
-          <button className={tab === 'list' ? 'on' : ''} onClick={() => { setTab('list'); setSel(null); }}>
+          <button className={tab === 'list' ? 'on' : ''} onClick={() => { setTab('list'); setSel(null); }} aria-pressed={tab === 'list'} aria-label={unverified > 0 && job.rooms.length > 0 ? `List, ${unverified} walls not measured yet` : 'List'}>
             List
             {unverified > 0 && job.rooms.length > 0 && <span className="badge">{unverified}</span>}
           </button>
@@ -222,46 +234,73 @@ export default function App() {
         <div className="main" ref={mainRef}>
           <PlanCanvas job={job} sel={sel} setSel={setSel} tool={tool} setTool={setTool} commit={commit} view={view} setView={setView} allow45={allow45} />
 
-          <nav className="toolbar">
-            {TOOLS.map(({ t, icon: Icon, label }) => (
-              <button key={t} className={`tool ${tool === t ? 'on' : ''}`} onClick={() => setTool(t)} aria-label={label} title={label}>
-                <Icon size={21} />
-                <span>{label}</span>
-              </button>
-            ))}
-            <div className="tsep" />
-            <button className="tool" onClick={undo} disabled={!H().past.length} aria-label="Undo">
+          <div className="view-ctl">
+            <button className="vbtn" onClick={undo} disabled={!H().past.length} aria-label="Undo">
               <Undo2 size={20} />
             </button>
-            <button className="tool" onClick={redo} disabled={!H().future.length} aria-label="Redo">
+            <button className="vbtn" onClick={redo} disabled={!H().future.length} aria-label="Redo">
               <Redo2 size={20} />
             </button>
-            <button className="tool" onClick={() => fit()} aria-label="Fit to screen">
+            <button className="vbtn" onClick={() => fit()} aria-label="Fit to screen">
               <Maximize size={19} />
             </button>
-          </nav>
+          </div>
 
           {!sel && (
-            <div className="hintbar">
-              <span>{job.rooms.length === 0 && tool === 'draw' ? 'Draw your first room with one finger. Two fingers pan and zoom.' : HINTS[tool]}</span>
-              {(tool === 'draw') && (
-                <button className={`mini ${allow45 ? 'on' : ''}`} onClick={() => setAllow45(!allow45)}>
-                  45°
-                </button>
-              )}
-              {job.rooms.length > 0 && unverified > 0 && tool === 'select' && (
-                <button
-                  className="mini on"
-                  onClick={() => {
-                    const f = firstUnverified();
-                    if (f) setSel({ kind: 'wall', ...f });
-                  }}
-                >
-                  Measure
-                </button>
+            <div className="hintbar" aria-live="polite">
+              {job.rooms.length > 0 && tool === 'select' ? (
+                <>
+                  <div className="strip-main">
+                    <span className="strip-line">
+                      {unverified > 0 ? (
+                        <>
+                          <b>{est.verifiedWalls}</b> of {est.totalWalls} walls measured
+                        </>
+                      ) : (
+                        <>All {est.totalWalls} walls measured</>
+                      )}
+                    </span>
+                    <span className="tape-progress" role="img" aria-label={`${est.verifiedWalls} of ${est.totalWalls} walls measured`}>
+                      <span style={{ width: `${est.totalWalls ? (est.verifiedWalls / est.totalWalls) * 100 : 0}%` }} />
+                    </span>
+                  </div>
+                  {unverified > 0 ? (
+                    <button
+                      className="mini on"
+                      onClick={() => {
+                        const f = firstUnverified();
+                        if (f) setSel({ kind: 'wall', ...f });
+                      }}
+                    >
+                      Measure
+                    </button>
+                  ) : (
+                    <button className="mini on" onClick={() => setTab('list')}>
+                      See list
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span className="strip-hint">{job.rooms.length === 0 && (tool === 'draw' || tool === 'select') ? 'Draw your first room with one finger. Two fingers move and zoom.' : HINTS[tool]}</span>
+                  {(tool === 'draw' || tool === 'rect') && (
+                    <button className={`mini ${allow45 ? 'on' : ''}`} onClick={() => setAllow45(!allow45)} aria-pressed={allow45} aria-label="Allow 45 degree walls">
+                      45°
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}
+
+          <nav className="toolbar" aria-label="Drawing tools">
+            {TOOLS.map(({ t, icon: Icon, label }) => (
+              <button key={t} className={`tool ${tool === t ? 'on' : ''}`} onClick={() => setTool(t)} aria-label={label} aria-pressed={tool === t}>
+                <Icon size={22} strokeWidth={2.1} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </nav>
 
           {sel?.kind === 'wall' && selRoom && sel.wall < wallCount(selRoom) && (
             <WallSheet job={job} room={selRoom} wall={sel.wall} commit={commit} onSelectWall={(room, wall) => setSel({ kind: 'wall', room, wall })} onClose={() => setSel(null)} />

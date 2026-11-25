@@ -111,11 +111,11 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
         if (dl * view.k < 18) continue;
         const nOut = outwardNormal(r, a, b);
         const m = lerp(a, b, 0.5);
-        const off = 15 / view.k;
+        const off = 17 / view.k;
         const len = wallLenIn(shown, r, i);
         const verified = isVerified(r, i);
         const text = (verified ? '' : '~') + fmtFtIn(len);
-        out.push({ room: r.id, wall: i, x: m.x + nOut.x * off, y: m.y + nOut.y * off, text, verified, w: text.length * 6.6 + 12, noBase: !!r.walls[i]?.noBase });
+        out.push({ room: r.id, wall: i, x: m.x + nOut.x * off, y: m.y + nOut.y * off, text, verified, w: text.length * 7 + 16, noBase: !!r.walls[i]?.noBase });
       }
     }
     return out;
@@ -416,6 +416,8 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
     <svg
       ref={svgRef}
       className="plan"
+      role="img"
+      aria-label={`Floor plan with ${shown.rooms.length} ${shown.rooms.length === 1 ? 'room' : 'rooms'}. Use the Measure button to go wall by wall.`}
       onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
@@ -424,6 +426,9 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
       onContextMenu={(e) => e.preventDefault()}
     >
       <defs>
+        <pattern id="tapeTicks" width={4} height={22} patternUnits="userSpaceOnUse" y={-11}>
+          <path d="M 0.5 0 V 3.5 M 0.5 18.5 V 22" stroke="var(--tape-ink)" strokeWidth={1} opacity={0.5} />
+        </pattern>
         <pattern id="gMinor" width={grid} height={grid} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
           <path d={`M ${grid} 0 L 0 0 0 ${grid}`} fill="none" stroke="var(--grid)" strokeWidth={1} />
         </pattern>
@@ -534,8 +539,15 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
         const isSel = sel?.kind === 'wall' && sel.room === l.room && sel.wall === l.wall;
         return (
           <g key={l.room + l.wall} transform={`translate(${sx} ${sy})`}>
-            <rect x={-l.w / 2} y={-10} width={l.w} height={20} rx={10} fill={isSel ? 'var(--accent)' : l.verified ? 'var(--chip-ok)' : 'var(--chip)'} stroke={isSel ? 'none' : l.verified ? 'var(--ok)' : 'var(--chip-border)'} strokeWidth={1} />
-            <text textAnchor="middle" dy="4" className="lbl" fill={isSel ? '#04121d' : l.verified ? 'var(--ok)' : 'var(--muted)'}>
+            {l.verified || isSel ? (
+              <>
+                <rect x={-l.w / 2} y={-11} width={l.w} height={22} rx={2.5} fill={isSel ? 'var(--chalk)' : 'var(--tape)'} stroke={isSel ? 'none' : 'var(--tape-edge)'} strokeWidth={1} />
+                {!isSel && <rect x={-l.w / 2 + 2} y={-11} width={l.w - 4} height={22} fill="url(#tapeTicks)" />}
+              </>
+            ) : (
+              <rect x={-l.w / 2} y={-11} width={l.w} height={22} rx={2.5} fill="var(--chip)" stroke="var(--pencil)" strokeWidth={1.25} strokeDasharray="3 2.5" />
+            )}
+            <text textAnchor="middle" dy="4.5" className="lbl" fill={isSel ? '#fff' : l.verified ? 'var(--tape-ink)' : 'var(--pencil)'}>
               {l.text}
             </text>
           </g>

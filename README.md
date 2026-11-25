@@ -14,6 +14,12 @@ Plumb is a phone-first web app for contractors. It turns a finger sketch into a 
 - **Paint:** walls (doors and windows removed) and ceilings, in quarts, gallons and 5-gallon buckets.
 - **Lists:** grouped by trade, checkable, and shareable by copy or text. A don't-forget list changes with the job.
 
+## Design
+
+The plan is drawn on engineering-pad paper in graphite. Every measured wall turns into a piece of yellow tape blade; estimated walls stay a dashed pencil outline. Chalk-line blue marks what you're touching. Tools sit in a dock at the bottom for one-handed use, and every control is at least 44 px for gloved hands.
+
+Type is Barlow and Barlow Condensed by The Barlow Project Authors, self-hosted from `src/fonts` under the SIL Open Font License (`src/fonts/OFL.txt`).
+
 ## Privacy
 
 No account, no server, no analytics, no AI. Jobs are stored in the browser's local storage on the device. Users can back up or export a job to a file, import it again (imports are validated), and erase everything from the job menu. When hosted, `vercel.json` sends a strict Content-Security-Policy that blocks all outside requests.
