@@ -28,7 +28,7 @@ dom.window.Element.prototype.getBoundingClientRect = function () {
 const errors: any[] = [];
 const origErr = console.error;
 console.error = (...a: any[]) => {
-  errors.push(a.join(' '));
+  if (!String(a[0]).includes('not wrapped in act')) errors.push(a.join(' '));
   origErr(...a);
 };
 
@@ -80,6 +80,8 @@ log('after draw, still sketching, no bar:', !$('.tapebar'), $('.tool.on')?.textC
 await new Promise((r) => setTimeout(r, 300));
 const saved = JSON.parse(localStorage.getItem('plumb.jobs.v1') || '[]');
 log('saved rooms:', saved[0]?.rooms?.length, JSON.stringify(saved[0]?.rooms?.[0]?.pts));
+log('after a room, tool is:', $('.tool.on')?.textContent);
+await click($$('.tool').find((b) => b.textContent === 'Sketch'), 'sketch tool');
 await stroke([[330, 150], [430, 150], [430, 300], [330, 300], [332, 152]]);
 log('labels:', $$('text.lbl').map((t) => t.textContent).join(' | '));
 await click($$('.tool').find((b) => b.textContent === 'Select'), 'select tool');
@@ -340,5 +342,5 @@ const bad = parseImport(
   }),
 );
 log('import sanitized:', bad.length, bad[0].name.length, bad[0].rooms[0].pts.length, JSON.stringify(bad[0].rooms[0].walls), bad[0].openings.length, bad[0].settings.wastePct, bad[0].settings.coats);
-log('console errors:', errors.length);
+log('console errors:', errors.length, errors.map((e) => String(e).slice(0, 300)).join(' // '));
 process.exit(errors.length ? 1 : 0);

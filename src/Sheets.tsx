@@ -320,7 +320,7 @@ export function RoomSheet({ job, room, commit, onMeasure, onClose, onDelete, onC
           <Ruler size={18} /> {verified < n ? `Measure ${n - verified === 1 ? 'the last wall' : `${n - verified} walls`}` : 'Review walls'}
         </button>
       </div>
-      {room.closed && <div className="tb-note">Drag inside the room to move it.</div>}
+      {room.closed && <div className="tb-note">Press and hold inside the room, then drag to move it.</div>}
     </div>
   );
 }

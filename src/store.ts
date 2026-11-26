@@ -233,3 +233,19 @@ export function parseImport(text: string): Job[] {
     .map(sanitizeJob)
     .filter((j): j is Job => !!j);
 }
+
+// one-time tips, so each is said once
+export function seenTip(name: string) {
+  try {
+    return localStorage.getItem('plumb.tip.' + name) === '1';
+  } catch {
+    return true;
+  }
+}
+export function markTip(name: string) {
+  try {
+    localStorage.setItem('plumb.tip.' + name, '1');
+  } catch {
+    /* private mode */
+  }
+}

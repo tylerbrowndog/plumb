@@ -43,6 +43,14 @@ interface Props {
   allow45: boolean;
   /** the wall a dragged tape tag is over */
   hot?: { room: string; wall: number } | null;
+  /** two-finger tap */
+  onUndo?: () => void;
+  /** three-finger tap */
+  onRedo?: () => void;
+  /** double-tap on empty paper */
+  onFit?: () => void;
+  /** a room was just drawn; App decides whether sketch stays on */
+  onDrawn?: () => void;
 }
 
 type Gesture =
@@ -53,10 +61,11 @@ type Gesture =
   | { type: 'vertex'; refs: { room: string; idx: number }[]; s0: Pt; moved: boolean; tap: Selection; base: Job }
   | { type: 'opening'; id: string; s0: Pt; moved: boolean }
   | { type: 'wallmove'; room: string; wall: number; s0: Pt; w0: Pt; moved: boolean; base: Job; d: number }
-  | { type: 'roommove'; room: string; s0: Pt; w0: Pt; moved: boolean; base: Job }
+  | { type: 'roommove'; room: string; s0: Pt; w0: Pt; moved: boolean; base: Job; t0: number; armed: boolean }
   | { type: 'place'; s0: Pt; moved: boolean };
 
 const TAP = 8; // px
+const HOLD = 260; // ms of press before a picked room lifts to move
 
 function outwardNormal(r: Room, a: Pt, b: Pt): Pt {
   const L = dist(a, b) || 1;
@@ -77,7 +86,7 @@ export function openingGeom(job: Job, r: Room, o: Opening) {
   return { a, b, p0: lerp(a, b, t0), p1: lerp(a, b, t1), c: lerp(a, b, o.t), nOut: outwardNormal(r, a, b), w: (t1 - t0) * dl };
 }
 
-export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, view, setView, allow45, hot }: Props) {
+export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, view, setView, allow45, hot, onUndo, onRedo, onFit, onDrawn }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const pointers = useRef(new Map<number, Pt>());
   const g = useRef<Gesture | null>(null);
@@ -86,6 +95,11 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
   const [size, setSize] = useState({ w: 390, h: 700 });
   const [dragJob, setDragJob] = useState<Job | null>(null);
   const shown = dragJob ?? job;
+  // multi-finger taps, tracked apart from the gesture: how many fingers, how long, how far
+  const taps = useRef<{ t0: number; max: number; travel: number; starts: Map<number, Pt>; v0: View } | null>(null);
+  const lastTap = useRef<{ t: number; p: Pt } | null>(null);
+  // where the finger is during a drag, for the magnifier
+  const [finger, setFinger] = useState<Pt | null>(null);
 
   useEffect(() => {
     const el = svgRef.current;
@@ -259,8 +273,14 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
   const onDown = (e: React.PointerEvent) => {
     try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ignore */ }
     const s = local(e);
+    if (pointers.current.size === 0) taps.current = { t0: performance.now(), max: 0, travel: 0, starts: new Map(), v0: view };
     pointers.current.set(e.pointerId, s);
+    if (taps.current) {
+      taps.current.starts.set(e.pointerId, s);
+      taps.current.max = Math.max(taps.current.max, pointers.current.size);
+    }
     if (pointers.current.size === 2) {
+      setFinger(null);
       const [p1, p2] = [...pointers.current.values()];
       if (g.current?.type === 'vertex') setDragJob(null);
       g.current = { type: 'pinch', d0: dist(p1, p2), m0: lerp(p1, p2, 0.5), v0: view };
@@ -280,7 +300,20 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
     if (sel?.kind === 'room') {
       const h = hit(s);
       if (h && h.kind === 'room' && h.room === sel.room) {
-        g.current = { type: 'roommove', room: sel.room, s0: s, w0: w, moved: false, base: job };
+        // a picked room moves only after a short hold, so a quick drag still just moves the plan
+        const gr = { type: 'roommove' as const, room: sel.room, s0: s, w0: w, moved: false, base: job, t0: performance.now(), armed: false };
+        g.current = gr;
+        window.setTimeout(() => {
+          if (g.current === gr && !gr.moved && pointers.current.size === 1) {
+            gr.armed = true;
+            try {
+              navigator.vibrate?.(12);
+            } catch {
+              /* no buzz here */
+            }
+            rerender();
+          }
+        }, HOLD);
         rerender();
         return;
       }
@@ -312,8 +345,14 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
     if (!pointers.current.has(e.pointerId)) return;
     const s = local(e);
     pointers.current.set(e.pointerId, s);
+    const tp = taps.current;
+    if (tp) {
+      const s0 = tp.starts.get(e.pointerId);
+      if (s0) tp.travel = Math.max(tp.travel, dist(s0, s));
+    }
     const gs = g.current;
     if (!gs) return;
+    if (gs.type !== 'pinch' && gs.type !== 'pan' && gs.type !== 'stroke' && gs.type !== 'place' && dist(s, gs.s0) > TAP) setFinger(s);
     if (gs.type === 'pinch') {
       if (pointers.current.size < 2) return;
       const [p1, p2] = [...pointers.current.values()];
@@ -377,6 +416,15 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
       gs.d = d;
       setDragJob(d ? moveWall(gs.base, gs.room, gs.wall, d) : gs.base);
     } else if (gs.type === 'roommove') {
+      if (!gs.armed && moved) {
+        if (performance.now() - gs.t0 < HOLD) {
+          // a quick drag: look around instead
+          g.current = { type: 'pan', s0: gs.s0, v0: view, moved: true, tap: 'clear' };
+          setView({ ...view, x: view.x + s.x - gs.s0.x, y: view.y + s.y - gs.s0.y });
+          return;
+        }
+        gs.armed = true;
+      }
       gs.moved ||= moved;
       if (!gs.moved) return;
       const w = toWorld(s);
@@ -397,7 +445,22 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
   const onUp = (e: React.PointerEvent) => {
     if (!pointers.current.has(e.pointerId)) return;
     pointers.current.delete(e.pointerId);
+    setFinger(null);
     const gs = g.current;
+    // a quick tap with two fingers undoes, three redoes, the way Procreate and Rhino do it
+    if (pointers.current.size === 0 && taps.current) {
+      const tp = taps.current;
+      taps.current = null;
+      if (tp.max >= 2 && performance.now() - tp.t0 < 380 && tp.travel < 16 && e.type !== 'pointercancel') {
+        g.current = null;
+        setDragJob(null);
+        setView(tp.v0);
+        if (tp.max === 2) onUndo?.();
+        else onRedo?.();
+        rerender();
+        return;
+      }
+    }
     if (!gs) return;
     if (gs.type === 'pinch') {
       if (pointers.current.size === 0) g.current = null;
@@ -405,11 +468,23 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
     }
     g.current = null;
     const s = local(e);
+    // two taps on empty paper bring the whole plan back into view
+    const emptyTap = () => {
+      const now = performance.now();
+      const lt = lastTap.current;
+      if (lt && now - lt.t < 320 && dist(lt.p, s) < 32) {
+        lastTap.current = null;
+        onFit?.();
+      } else lastTap.current = { t: now, p: s };
+    };
     const tapSelect = () => {
       const h = hit(s);
       if (h && h.kind !== 'vertex') setSel(h);
       else if (h && h.kind === 'vertex') setSel({ kind: 'corner', room: h.room, idx: h.idx });
-      else setSel(null);
+      else {
+        setSel(null);
+        emptyTap();
+      }
     };
     if (gs.type === 'stroke') {
       if (!gs.moved) {
@@ -421,8 +496,9 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           const name = rec.closed ? `Room ${job.rooms.filter((r) => r.closed).length + 1}` : `Wall run ${job.rooms.filter((r) => !r.closed).length + 1}`;
           const room = newRoom(name, rec.pts, rec.closed);
           commit((j) => ({ ...j, rooms: [...j.rooms, room] }));
-          // stay in sketch so the next room can go right on; tape lengths get dropped on after
+          // back to Select so one finger moves the plan to check it; Sketch can be locked on
           setSel(null);
+          onDrawn?.();
         }
       }
     } else if (gs.type === 'rect') {
@@ -433,6 +509,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           const room = newRoom(`Room ${job.rooms.filter((r) => r.closed).length + 1}`, pts, true);
           commit((j) => ({ ...j, rooms: [...j.rooms, room] }));
           setSel(null);
+          onDrawn?.();
         }
       }
     } else if (gs.type === 'place') {
@@ -457,7 +534,10 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
       setSel({ kind: 'opening', id: o.id });
       setTool('select');
     } else if (gs.type === 'pan') {
-      if (!gs.moved) setSel(gs.tap === 'clear' ? null : gs.tap);
+      if (!gs.moved) {
+        setSel(gs.tap === 'clear' ? null : gs.tap);
+        if (gs.tap === 'clear') emptyTap();
+      }
     } else if (gs.type === 'vertex') {
       if (gs.moved && dragJob) {
         const dj = dragJob;
@@ -541,7 +621,7 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
       {showMinor && <rect width={size.w} height={size.h} fill="url(#gMinor)" />}
       <rect width={size.w} height={size.h} fill="url(#gMajor)" />
 
-      <g transform={`translate(${view.x} ${view.y}) scale(${k})`}>
+      <g id="world" transform={`translate(${view.x} ${view.y}) scale(${k})`}>
         {/* rooms */}
         {shown.rooms.map((r) => {
           const isSel = r.id === selRoomId;
@@ -549,6 +629,9 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           return (
             <g key={r.id}>
               {r.closed && <path d={d} fill={isSel ? 'var(--room-sel)' : 'var(--room)'} />}
+              {r.closed && gs?.type === 'roommove' && gs.armed && gs.room === r.id && (
+                <path d={d} className="room-lift" fill="var(--accent)" fillOpacity={0.22} stroke="var(--accent)" strokeWidth={12} strokeOpacity={0.3} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+              )}
               <path d={d} fill="none" stroke={isSel ? 'var(--wall-sel)' : 'var(--wall)'} strokeWidth={isSel ? 2.5 : 2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
               {r.walls.map((wl, i) =>
                 wl.noBase && i < wallCount(r) ? (
@@ -740,6 +823,50 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           </g>
         );
       })}
+
+      {/* magnifier: the finger hides the corner it drags, so show it bigger, off to the side */}
+      {finger && gs && (gs.type === 'vertex' || gs.type === 'wallmove' || gs.type === 'opening' || gs.type === 'rect') && gs.moved &&
+        (() => {
+          let f = finger;
+          if (gs.type === 'vertex' && dragJob) {
+            const ref = gs.refs[0];
+            const q = dragJob.rooms.find((x) => x.id === ref.room)?.pts[ref.idx];
+            if (q) f = { x: q.x * k + view.x, y: q.y * k + view.y };
+          } else if (gs.type === 'opening' && dragJob) {
+            const o = dragJob.openings.find((x) => x.id === gs.id);
+            const r = o && dragJob.rooms.find((x) => x.id === o.room);
+            if (o && r) {
+              const c = openingGeom(dragJob, r, o).c;
+              f = { x: c.x * k + view.x, y: c.y * k + view.y };
+            }
+          } else if (gs.type === 'rect' && preview) {
+            const q = preview.reduce((m, p) => (dist(p, toWorld(finger)) < dist(m, toWorld(finger)) ? p : m), preview[0]);
+            f = { x: q.x * k + view.x, y: q.y * k + view.y };
+          }
+          const R = 54,
+            Z = 2;
+          let cx = finger.x,
+            cy = finger.y - 124;
+          if (cy < R + 8) {
+            cy = Math.max(R + 8, finger.y - 20);
+            cx = finger.x > size.w / 2 ? finger.x - 132 : finger.x + 132;
+          }
+          cx = Math.max(R + 6, Math.min(size.w - R - 6, cx));
+          return (
+            <g pointerEvents="none" className="loupe">
+              <clipPath id="loupeClip">
+                <circle cx={cx} cy={cy} r={R} />
+              </clipPath>
+              <circle cx={cx} cy={cy} r={R + 3} fill="var(--canvas)" stroke="var(--glass-edge)" strokeWidth={1} className="loupe-shadow" />
+              <g clipPath="url(#loupeClip)">
+                <rect x={cx - R} y={cy - R} width={R * 2} height={R * 2} fill="var(--canvas)" />
+                <use href="#world" transform={`translate(${cx} ${cy}) scale(${Z}) translate(${-f.x} ${-f.y})`} />
+              </g>
+              <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--accent)" strokeWidth={2} />
+              <path d={`M ${cx - 9} ${cy} H ${cx - 3} M ${cx + 3} ${cy} H ${cx + 9} M ${cx} ${cy - 9} V ${cy - 3} M ${cx} ${cy + 3} V ${cy + 9}`} stroke="var(--accent)" strokeWidth={1.5} strokeLinecap="round" />
+            </g>
+          );
+        })()}
     </svg>
   );
 }

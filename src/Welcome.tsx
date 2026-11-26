@@ -78,6 +78,7 @@ export default function Welcome({ onStart, onSample }: { onStart: () => void; on
             </li>
           ))}
         </ol>
+        <p className="gestures">One finger moves the plan. Tap with two fingers to undo, three to redo. Double-tap to see it all.</p>
         <div className="welcome-actions">
           <button className="btn primary full" onClick={onStart} autoFocus>
             Start a job

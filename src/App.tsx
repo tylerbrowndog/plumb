@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MousePointer2, PenLine, SquarePlus, DoorOpen, AppWindow, Undo2, Redo2, Maximize, Menu, ChevronDown, CircleHelp, Trash2, Settings2 } from 'lucide-react';
+import { MousePointer2, PenLine, SquarePlus, DoorOpen, AppWindow, Undo2, Redo2, Maximize, Menu, ChevronDown, CircleHelp, Trash2, Settings2, Lock } from 'lucide-react';
 import { canDeleteCorner, closeRun, deleteCorner, deleteWall, deleteWallEffect, splitWall } from './edit';
 
 /** a short tick under the thumb, where the phone allows it */
@@ -10,12 +10,12 @@ const buzz = (ms = 10) => {
     /* not on this phone */
   }
 };
-import type { Job, Selection, Tool } from './types';
+import type { Job, Opening, Selection, Tool } from './types';
 import PlanCanvas, { type View } from './PlanCanvas';
 import { AddRoomSheet, OpeningSheet, RoomSheet, WallSheet } from './Sheets';
 import Materials from './Materials';
 import Jobs from './Jobs';
-import { loadCurrent, loadJobs, markWelcome, newJob, newRoom, sampleJob, saveCurrent, saveJobs, seenWelcome, wipeAll } from './store';
+import { loadCurrent, loadJobs, markTip, markWelcome, newJob, newRoom, sampleJob, saveCurrent, saveJobs, seenTip, seenWelcome, wipeAll } from './store';
 import Welcome from './Welcome';
 import { bounds, isVerified, wallCount, wallEnds, lerp, roomBySize } from './geometry';
 import { fmtFtIn } from './units';
@@ -36,6 +36,34 @@ const HINTS: Record<Tool, string> = {
   door: 'Tap a wall where the door goes.',
   window: 'Tap a wall where the window goes.',
 };
+
+// what one step on the plan was, in a few words, for the note that undo and redo show
+function describeAction(before: Job, after: Job): string {
+  const added = after.rooms.filter((r) => !before.rooms.some((x) => x.id === r.id));
+  const gone = before.rooms.filter((r) => !after.rooms.some((x) => x.id === r.id));
+  if (added.length && !gone.length) return added.length > 1 ? 'new rooms' : `new ${added[0].name}`;
+  if (gone.length && !added.length) return gone.length > 1 ? 'deleted rooms' : `deleted ${gone[0].name}`;
+  const oAdd = after.openings.filter((o) => !before.openings.some((x) => x.id === o.id));
+  const oGone = before.openings.filter((o) => !after.openings.some((x) => x.id === o.id));
+  const kind = (o: Opening) => (o.type === 'window' ? 'window' : o.type === 'opening' ? 'opening' : 'door');
+  if (oAdd.length && !oGone.length) return `new ${kind(oAdd[0])}`;
+  if (oGone.length && !oAdd.length) return `deleted ${kind(oGone[0])}`;
+  let taped = false,
+    moved = false,
+    shape = false;
+  for (const r of after.rooms) {
+    const f = before.rooms.find((x) => x.id === r.id);
+    if (!f) continue;
+    if (r.pts.length !== f.pts.length) shape = true;
+    else if (r.pts.some((q, i) => q.x !== f.pts[i].x || q.y !== f.pts[i].y)) moved = true;
+    if (r.walls.some((w, i) => !w.predicted && (w.lengthIn ?? 0) !== (f.walls[i]?.lengthIn ?? 0))) taped = true;
+  }
+  if (taped) return 'tape length';
+  if (shape) return 'corner change';
+  if (moved) return 'move';
+  if (after.openings.some((o) => { const f = before.openings.find((x) => x.id === o.id); return f && f.t !== o.t; })) return 'move';
+  return 'last change';
+}
 
 function initial() {
   let jobs = loadJobs();
@@ -68,6 +96,14 @@ export default function App() {
   const mainRef = useRef<HTMLDivElement>(null);
   const [mainSize, setMainSize] = useState({ w: 390, h: 700 });
   const [view, setView] = useState<View>({ x: 60, y: 120, k: 2 });
+  // Sketch goes back to Select after each room, unless it is locked on (tap Sketch again)
+  const [sketchLock, setSketchLock] = useState(false);
+  const [hud, setHud] = useState<{ text: string; n: number } | null>(null);
+  const showHud = (text: string) => {
+    setHud((h) => ({ text, n: (h?.n ?? 0) + 1 }));
+    window.clearTimeout((showHud as unknown as { t?: number }).t);
+    (showHud as unknown as { t?: number }).t = window.setTimeout(() => setHud(null), 900);
+  };
 
   const toast = useCallback((s: string, undoable = false) => {
     setToastMsg(s);
@@ -115,19 +151,40 @@ export default function App() {
   const undo = () => {
     const h = H();
     const p = h.past.pop();
-    if (!p) return;
-    h.future.push(job);
+    if (!p) {
+      showHud('Nothing to undo');
+      return;
+    }
+    const cur = jobRef.current;
+    h.future.push(cur);
+    jobRef.current = p;
     setJob(p);
     setSel(null);
+    // back to a blank page: be ready to draw again
+    if (!p.rooms.length) {
+      setAdding(false);
+      setTool('draw');
+    }
+    buzz(10);
+    showHud(`Undid ${describeAction(p, cur)}`);
     bump((n) => n + 1);
   };
   const redo = () => {
     const h = H();
     const f = h.future.pop();
-    if (!f) return;
-    h.past.push(job);
+    if (!f) {
+      showHud('Nothing to redo');
+      return;
+    }
+    const cur = jobRef.current;
+    h.past.push(cur);
+    jobRef.current = f;
     setJob(f);
     setSel(null);
+    // the first room came back: one finger looks around again
+    if (!cur.rooms.length && f.rooms.length && tool === 'draw' && !sketchLock) setTool('select');
+    buzz(10);
+    showHud(`Redid ${describeAction(cur, f)}`);
     bump((n) => n + 1);
   };
 
@@ -182,7 +239,7 @@ export default function App() {
 
   // ----- view helpers -----
   const RAIL = 72,
-    RIGHT = 64;
+    RIGHT = 10;
   // how much of the bottom each bar covers (its height plus the gap under it)
   const sheetH = sel ? (sel.kind === 'wall' ? 226 : sel.kind === 'room' ? 308 : sel.kind === 'opening' ? 356 : 70) : adding ? 228 : 70;
   // where the tools float: the left rail and the view buttons. The plan fits beside them, or below
@@ -192,15 +249,22 @@ export default function App() {
       const el = document.querySelector(sel) as HTMLElement | null;
       return el ? { l: el.offsetLeft, t: el.offsetTop, r: el.offsetLeft + el.offsetWidth, b: el.offsetTop + el.offsetHeight } : fb;
     };
-    return [rect('.rail', { l: 10, t: 8, r: RAIL, b: 320 }), rect('.view-ctl', { l: mainSize.w - RIGHT, t: 8, r: mainSize.w - 10, b: 150 })];
+    // the undo buttons slide with the bar under them, so work out where they will rest, not where they are mid-slide
+    const vb = mainSize.h - sheetH - 8;
+    const vw = (document.querySelector('.view-ctl') as HTMLElement | null)?.offsetWidth || 146;
+    return [rect('.rail', { l: 10, t: 8, r: RAIL, b: 320 }), { l: mainSize.w - 10 - vw, t: vb - 48, r: mainSize.w - 10, b: vb }];
   };
   const PAD = 30; // the length tags sit just outside each wall
   const fitAreas = () => {
     const [rail, vc] = toolRects();
+    // the undo buttons sit just above the bottom bar on the right: the plan goes above them,
+    // or beside them down to the bar, whichever draws it bigger
     const bottom = mainSize.h - 92;
     return [
+      { x0: rail.r + 6, x1: mainSize.w - 8, y0: 12, y1: vc.t - 6 },
+      { x0: 8, x1: mainSize.w - 8, y0: rail.b + 6, y1: vc.t - 6 },
       { x0: rail.r + 6, x1: vc.l - 6, y0: 12, y1: bottom },
-      { x0: 8, x1: mainSize.w - 8, y0: Math.max(rail.b, vc.b) + 6, y1: bottom },
+      { x0: 8, x1: vc.l - 6, y0: rail.b + 6, y1: bottom },
     ];
   };
   const fit = useCallback(
@@ -262,7 +326,7 @@ export default function App() {
         y1 = Math.max(...ys);
       setView((v) => {
         const top = 16,
-          bottom = mainSize.h - sheetH - 34;
+          bottom = mainSize.h - sheetH - 66;
         const s0 = y0 * v.k + v.y,
           s1 = y1 * v.k + v.y;
         if (s1 <= bottom) return v;
@@ -386,7 +450,37 @@ export default function App() {
 
       {tab === 'plan' ? (
         <div className="main" ref={mainRef}>
-          <PlanCanvas job={job} sel={sel} setSel={setSel} tool={tool} setTool={setTool} commit={commit} view={view} setView={setView} allow45={allow45} />
+          <PlanCanvas
+            job={job}
+            sel={sel}
+            setSel={setSel}
+            tool={tool}
+            setTool={setTool}
+            commit={commit}
+            view={view}
+            setView={setView}
+            allow45={allow45}
+            onUndo={undo}
+            onRedo={redo}
+            onFit={() => {
+              fit();
+              showHud('Whole plan');
+            }}
+            onDrawn={() => {
+              if (sketchLock) return;
+              setTool('select');
+              if (!seenTip('pan')) {
+                markTip('pan');
+                toast('Room drawn. Drag with one finger to look around. Two-finger tap undoes.');
+              }
+            }}
+          />
+
+          {hud && (
+            <div key={hud.n} className="hud" role="status" aria-live="polite">
+              {hud.text}
+            </div>
+          )}
 
           {job.rooms.length === 0 && !adding && (tool === 'draw' || tool === 'rect') && (
             <div className="empty-plan" aria-hidden="true">
@@ -410,7 +504,7 @@ export default function App() {
             </div>
           )}
 
-          <div className="view-ctl">
+          <div className="view-ctl" style={{ bottom: `calc(var(--safe-b) + ${sheetH + 8}px)` }}>
             <button className="vbtn" onClick={undo} disabled={!H().past.length} aria-label="Undo">
               <Undo2 size={20} />
             </button>
@@ -485,9 +579,16 @@ export default function App() {
                   if (t === 'add') {
                     setSel(null);
                     setAdding(true);
+                  } else if (t === 'draw' && tool === 'draw' && !adding) {
+                    // tap Sketch again to keep it on for room after room
+                    const on = !sketchLock;
+                    setSketchLock(on);
+                    setSel(null);
+                    toast(on ? 'Sketch stays on. Draw room after room, then pick Select.' : 'Sketch goes back to Select after each room.');
                   } else {
                     setAdding(false);
                     setSel(null);
+                    if (t !== 'draw') setSketchLock(false);
                     setTool(t);
                   }
                 }}
@@ -496,6 +597,11 @@ export default function App() {
               >
                 <Icon size={22} strokeWidth={2.1} />
                 <span>{label}</span>
+                {t === 'draw' && sketchLock && (
+                  <i className="tool-lock" aria-label="stays on">
+                    <Lock size={10} strokeWidth={2.6} />
+                  </i>
+                )}
               </button>
             ))}
           </nav>
@@ -682,7 +788,7 @@ export default function App() {
       )}
 
       {toastMsg && (
-        <div className="toast" role="status" aria-live="polite" style={{ top: 'auto', bottom: `calc(var(--safe-b) + ${tab === 'plan' ? sheetH + 18 : 98}px)` }}>
+        <div className="toast" role="status" aria-live="polite" style={{ top: 'auto', bottom: `calc(var(--safe-b) + ${tab === 'plan' ? sheetH + 66 : 98}px)` }}>
           <span>{toastMsg}</span>
           {toastUndo && (
             <button

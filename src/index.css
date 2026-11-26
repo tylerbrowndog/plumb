@@ -2337,3 +2337,75 @@ body {
   margin-left: auto;
   margin-right: auto;
 }
+
+/* ---------- touch controls: undo in thumb reach, a note on the plan, the magnifier ---------- */
+.view-ctl {
+  top: auto;
+  right: 10px;
+  flex-direction: row;
+  padding: 0 2px;
+  border-radius: 24px;
+  transition: bottom 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.vbtn + .vbtn {
+  border-top: 0;
+  border-left: 1px solid var(--hair);
+}
+.vbtn:disabled {
+  opacity: 0.35;
+}
+.hud {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+  z-index: 6;
+  pointer-events: none;
+  padding: 9px 16px;
+  border-radius: 20px;
+  background: var(--case);
+  color: var(--case-text);
+  font-weight: 650;
+  font-size: 14.5px;
+  white-space: nowrap;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  animation: hud-in 0.9s ease forwards;
+}
+@keyframes hud-in {
+  0% { opacity: 0; transform: translate(-50%, -6px) scale(0.96); }
+  14% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  72% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.tool {
+  position: relative;
+}
+.tool-lock {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--tape);
+  color: var(--tape-ink);
+}
+.loupe-shadow {
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.3));
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud {
+    animation: none;
+  }
+  .view-ctl {
+    transition: none;
+  }
+}
+.gestures {
+  margin: 2px 0 14px;
+  color: var(--pencil);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
