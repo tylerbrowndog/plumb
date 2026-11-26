@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MousePointer2, PenLine, SquarePlus, DoorOpen, AppWindow, Undo2, Redo2, Maximize, Menu, ChevronDown, CircleHelp, Trash2, Settings2, Lock } from 'lucide-react';
+import { MousePointer2, PenLine, SquarePlus, DoorOpen, AppWindow, Undo2, Redo2, Maximize, Menu, ChevronDown, CircleHelp, Trash2, Settings2, Lock, Mic, TriangleAlert } from 'lucide-react';
 import { canDeleteCorner, closeRun, deleteCorner, deleteWall, deleteWallEffect, splitWall } from './edit';
 
 /** a short tick under the thumb, where the phone allows it */
@@ -20,6 +20,10 @@ import Welcome from './Welcome';
 import { bounds, isVerified, wallCount, wallEnds, lerp, roomBySize } from './geometry';
 import { fmtFtIn } from './units';
 import { estimate } from './estimate';
+import VoicePanel, { type VLine } from './Voice';
+import { isEcho, makeEar, prepareEars, earKind, setTalkBack, speak, stopSpeaking, talkBackOn, type EarKind } from './speech';
+import { runVoice, type VoiceMemory } from './voiceRun';
+import { findIssues, lengthWarning, type Issue } from './checks';
 
 const TOOLS: { t: Tool | 'add'; icon: typeof PenLine; label: string }[] = [
   { t: 'select', icon: MousePointer2, label: 'Select' },
@@ -142,6 +146,63 @@ export default function App() {
     window.clearTimeout((toast as unknown as { t?: number }).t);
     (toast as unknown as { t?: number }).t = window.setTimeout(() => setToastMsg(null), undoable ? 4500 : 1800);
   }, []);
+
+  // ----- voice: you call it out, Plumb writes it down -----
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [partial, setPartial] = useState('');
+  const [vlines, setVlines] = useState<VLine[]>([]);
+  const [vwarn, setVwarn] = useState(false);
+  const [talk, setTalk] = useState(talkBackOn);
+  const [ear, setEar] = useState<EarKind>('keyboard');
+  const vmem = useRef<VoiceMemory>({});
+  const vinput = useRef<HTMLInputElement>(null);
+  const vline = useRef(0);
+  const selRef = useRef<Selection>(null);
+  const tabRef = useRef<'plan' | 'list'>('plan');
+  const talkRef = useRef(talk);
+  talkRef.current = talk;
+  const heardRef = useRef<(t: string) => void>(() => undefined);
+  const earRef = useRef<ReturnType<typeof makeEar> | null>(null);
+  useEffect(() => {
+    prepareEars();
+    const t = setTimeout(() => setEar(earKind()), 600);
+    return () => clearTimeout(t);
+  }, []);
+  const getEar = () =>
+    (earRef.current ||= makeEar({
+      partial: (t) => setPartial(t),
+      final: (t) => {
+        setPartial('');
+        if (isEcho(t)) return;
+        heardRef.current(t);
+      },
+      state: (on, why) => {
+        setListening(on);
+        if (!on) setPartial('');
+        if (why === 'denied') {
+          setEar('keyboard');
+          pushLines([{ text: 'The mic is off for Plumb here. Tap the box and use the keyboard\'s mic.', tone: 'warn' }]);
+        }
+      },
+    }));
+  const pushLines = (ls: Omit<VLine, 'id'>[]) => setVlines((v) => [...v, ...ls.map((l) => ({ ...l, id: ++vline.current }))].slice(-12));
+  /** from a tap: open the strip and start the mic in the same tap, or put the cursor in the box for the keyboard's mic */
+  const startVoice = () => {
+    setVoiceOpen(true);
+    const k = getEar().start();
+    setEar(k);
+    if (k === 'keyboard') vinput.current?.focus();
+    if (!seenTip('voice')) {
+      markTip('voice');
+      pushLines([{ text: k === 'keyboard' ? 'Tap the mic on your keyboard and call it out: "12 foot 6, next"' : 'Call it out: "12 foot 6, next". Say "no, 12 foot" to fix one.', tone: 'info' }]);
+    }
+  };
+  const stopVoice = () => {
+    earRef.current?.stop();
+    stopSpeaking();
+    setListening(false);
+  };
 
   useEffect(() => {
     const t = setTimeout(() => saveJobs(jobs), 250);
@@ -497,11 +558,60 @@ export default function App() {
     toast(`${nm} added, ${fmtFtIn(L)} by ${fmtFtIn(W)}.`);
   };
 
+  selRef.current = sel;
+  tabRef.current = tab;
+  const doVoice = (text: string) => {
+    const out = runVoice(
+      text,
+      {
+        job: () => jobRef.current,
+        commit,
+        sel: () => selRef.current,
+        setSel: (x) => {
+          selRef.current = x;
+          setSel(x);
+        },
+        undo,
+        redo,
+        tab: () => tabRef.current,
+        setTab: (t) => {
+          tabRef.current = t;
+          setTab(t);
+          if (t === 'plan') setAdding(false);
+        },
+        addRoom,
+        openAddRoom: () => {
+          setTab('plan');
+          setSel(null);
+          setAdding(true);
+        },
+        stop: stopVoice,
+        help: () => pushLines([{ text: 'Tap "What can I say?" for examples', tone: 'info' }]),
+      },
+      vmem.current,
+    );
+    pushLines([{ text: `“${text.trim()}”`, tone: "info" }, ...out.lines]);
+    setVwarn(out.warn);
+    if (out.warn) buzz(30);
+    if (talkRef.current && out.say) speak(out.say);
+  };
+  heardRef.current = doVoice;
+  const issues = useMemo(() => findIssues(job), [job]);
+  const warnIssues = issues.filter((i) => i.level === 'warn');
+  const goIssue = (i: Issue) => {
+    setTab('plan');
+    setTool('select');
+    setAdding(false);
+    if (i.room && i.wall != null) setSel({ kind: 'wall', room: i.room, wall: i.wall });
+    else if (i.room) setSel({ kind: 'room', room: i.room });
+    toast(i.fix);
+  };
+
   const selRoom = sel && sel.kind !== 'opening' ? job.rooms.find((r) => r.id === sel.room) : null;
   const selOpening = sel?.kind === 'opening' ? job.openings.find((o) => o.id === sel.id) : null;
 
   return (
-    <div className="app">
+    <div className={`app ${voiceOpen ? 'voicing' : ''}`}>
       <header className="top">
         <button className="job-btn" onClick={() => setDrawer(true)} aria-label={`Jobs. Current job: ${job.name}`}>
           <Menu size={20} />
@@ -517,10 +627,39 @@ export default function App() {
             {unverified > 0 && job.rooms.length > 0 && <span className="badge">{unverified}</span>}
           </button>
         </div>
+        <button className={`icon-btn mic ${listening ? 'on' : voiceOpen ? 'open' : ''}`} onClick={() => (listening ? stopVoice() : startVoice())} aria-label={listening ? 'Stop listening' : 'Talk to Plumb'} aria-pressed={listening}>
+          <Mic size={20} />
+        </button>
         <button className="icon-btn help" onClick={() => setWelcome(true)} aria-label="How Plumb works">
           <CircleHelp size={20} />
         </button>
       </header>
+
+      <VoicePanel
+        ref={vinput}
+        open={voiceOpen}
+        listening={listening}
+        kind={ear}
+        partial={partial}
+        lines={vlines}
+        warn={vwarn}
+        talk={talk}
+        placeholder={tab === 'list' ? 'Say or type: 2 tubes of caulk, shims' : 'Say or type: 12 6, next'}
+        onMic={() => (listening ? stopVoice() : startVoice())}
+        onClose={() => {
+          stopVoice();
+          setVoiceOpen(false);
+        }}
+        onTalk={() => {
+          const on = !talk;
+          setTalk(on);
+          setTalkBack(on);
+          if (!on) stopSpeaking();
+        }}
+        onRun={doVoice}
+        onKeep={() => doVoice('keep it')}
+        onUndo={() => doVoice('undo')}
+      />
 
       {tab === 'plan' ? (
         <div className="main" ref={mainRef}>
@@ -630,6 +769,11 @@ export default function App() {
                       45°
                     </button>
                   )}
+                  {warnIssues.length > 0 && (
+                    <button className="mini warn" onClick={() => goIssue(warnIssues[0])} aria-label={`${warnIssues.length} ${warnIssues.length === 1 ? 'thing' : 'things'} to check: ${warnIssues[0].text}`}>
+                      <TriangleAlert size={15} /> {warnIssues.length}
+                    </button>
+                  )}
                   {unverified > 0 ? (
                     <button
                       className="mini on"
@@ -694,6 +838,13 @@ export default function App() {
               wall={sel.wall}
               commit={commit}
               onSelectWall={(room, wall) => setSel({ kind: 'wall', room, wall })}
+              onMeasured={(before, after, room, wall, inches) => {
+                const w = lengthWarning(before, after, room, wall, inches);
+                if (w) {
+                  buzz(30);
+                  toast(w.replace(/Say "no" and the right number(, or "keep it")?\.?/, 'Undo to fix it.').replace(/Say "no" and the number, or "keep it"\./, 'Undo if that is a slip.'), true);
+                }
+              }}
               onClose={() => setSel(null)}
               onDelete={() => {
                 const eff = deleteWallEffect(selRoom, sel.wall);
@@ -782,6 +933,10 @@ export default function App() {
             job={job}
             commit={commit}
             toast={toast}
+            issues={issues}
+            onIssue={goIssue}
+            listening={listening}
+            onVoice={() => (listening ? stopVoice() : startVoice())}
             onVerify={() => {
               const f = firstUnverified();
               setTab('plan');

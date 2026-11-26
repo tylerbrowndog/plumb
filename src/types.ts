@@ -97,6 +97,18 @@ export interface Job {
   notes: string;
   /** tape lengths typed in, waiting to be dropped on a wall */
   tray?: { id: string; inches: number }[];
+  /** things added to the list by hand or by voice */
+  extras?: Extra[];
+}
+
+export interface Extra {
+  id: string;
+  name: string;
+  qty: number;
+  /** singular: tube, box, bag. Empty for plain counts */
+  unit?: string;
+  done?: boolean;
+  addedAt: number;
 }
 
 export type Selection =

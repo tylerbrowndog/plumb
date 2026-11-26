@@ -221,6 +221,18 @@ export function sanitizeJob(raw: unknown): Job | null {
       .map((t) => (t && typeof t === 'object' ? (t as Record<string, unknown>).inches : null))
       .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 2400)
       .map((inches) => ({ id: uid(), inches })),
+    extras: (Array.isArray(j.extras) ? j.extras : [])
+      .slice(0, 300)
+      .map((e) => (e && typeof e === 'object' ? (e as Record<string, unknown>) : null))
+      .filter((e): e is Record<string, unknown> => !!e && typeof e.name === 'string' && !!(e.name as string).trim())
+      .map((e) => ({
+        id: uid(),
+        name: str(e.name, 'Item', 80).trim(),
+        qty: Math.round(num(e.qty, 1, 999, 1)),
+        ...(typeof e.unit === 'string' && e.unit.trim() ? { unit: str(e.unit, '', 20).trim() } : {}),
+        ...(e.done === true ? { done: true } : {}),
+        addedAt: num(e.addedAt, 0, 1e13, Date.now()),
+      })),
   };
 }
 

@@ -89,7 +89,7 @@ export default function Welcome({ onStart, onSample }: { onStart: () => void; on
         </div>
         <p className="privacy slim">
           <ShieldCheck size={18} aria-hidden />
-          <span>No account, no cloud, no AI. Your jobs never leave this phone.</span>
+          <span>No account, no cloud. Your jobs never leave this phone.</span>
         </p>
       </div>
     </div>

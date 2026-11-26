@@ -187,7 +187,7 @@ export default function Jobs({
         )}
         <div className="privacy">
           <ShieldCheck size={20} />
-          <div>Jobs live only on this phone. No account, no cloud, no AI, no tracking. Back up to a file whenever you want.</div>
+          <div>Jobs live only on this phone. No account, no cloud, no tracking. Voice is turned into words by your phone or browser. Back up to a file whenever you want.</div>
         </div>
       </div>
     </div>

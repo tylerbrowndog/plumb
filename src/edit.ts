@@ -232,3 +232,20 @@ export function alignWallOffset(job: Job, r: Room, i: number, d: number, tol: nu
     }
   return best;
 }
+
+/** a door, window or opening on a wall, with the job's usual sizes unless told otherwise */
+export function newOpening(job: Job, roomId: string, wall: number, type: Opening['type'], opts: { widthIn?: number; heightIn?: number; newDoor?: boolean } = {}): Opening {
+  const s = job.settings;
+  const existing = job.openings.filter((o) => o.room === roomId && o.wall === wall).length;
+  return {
+    id: uid(),
+    room: roomId,
+    wall,
+    t: [0.5, 0.25, 0.75, 0.15, 0.85][existing % 5],
+    type,
+    widthIn: opts.widthIn ?? (type === 'window' ? s.windowWidthIn : type === 'door' ? s.doorWidthIn : 36),
+    heightIn: opts.heightIn ?? (type === 'window' ? s.windowHeightIn : s.doorHeightIn),
+    bothSides: type !== 'window',
+    ...(opts.newDoor ? { newDoor: true } : {}),
+  };
+}

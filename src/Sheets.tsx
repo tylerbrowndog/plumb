@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, DoorOpen, AppWindow, Trash2, Ruler, Check, Scale, Delete, X, RectangleHorizontal, Plus, Ban, Ellipsis } from 'lucide-react';
 import type React from 'react';
 import type { FloorType, Job, Opening, OpeningType, Room } from './types';
-import { isVerified, uid, wallCount, wallLenIn } from './geometry';
+import { drawnLen, isVerified, wallCount, wallLenIn } from './geometry';
 import { fmtFtIn, parseLength } from './units';
 import { applyMeasurement } from './measure';
+import { newOpening } from './edit';
 
 type Commit = (fn: (j: Job) => Job) => void;
 
@@ -71,7 +72,7 @@ function TapePad({ onKey, confirm, onConfirm, confirmDisabled, confirmLabel }: {
 
 const typeKey = (t: string, k: string) => (k === 'del' ? t.slice(0, -1) : (t + k).replace(/\s{2,}/g, ' ').replace(/^\s+/, ''));
 
-export function WallSheet({ job, room, wall, commit, onSelectWall, onClose, onDelete, onAddCorner }: { job: Job; room: Room; wall: number; commit: Commit; onSelectWall: (room: string, wall: number) => void; onClose: () => void; onDelete: () => void; onAddCorner: () => void }) {
+export function WallSheet({ job, room, wall, commit, onSelectWall, onClose, onDelete, onAddCorner, onMeasured }: { job: Job; room: Room; wall: number; commit: Commit; onSelectWall: (room: string, wall: number) => void; onClose: () => void; onDelete: () => void; onAddCorner: () => void; onMeasured?: (before: Job, after: Job, room: string, wall: number, inches: number) => void }) {
   const [txt, setTxt] = useState('');
   const [more, setMore] = useState(false);
   useEffect(() => setTxt(''), [room.id, wall]);
@@ -101,10 +102,13 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose, onDe
 
   const save = (inches: number, setScale: boolean) => {
     let nextJob: Job | null = null;
+    let before: Job | null = null;
     commit((j) => {
+      before = j;
       nextJob = applyMeasurement(j, room.id, wall, inches, setScale);
       return nextJob;
     });
+    if (before && nextJob) onMeasured?.(before, nextJob, room.id, wall, inches);
     try {
       navigator.vibrate?.(8);
     } catch {
@@ -129,6 +133,10 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose, onDe
   const key = (k: string) => setTxt((t) => typeKey(t, k));
   usePhysicalKeys(key, confirm);
 
+  // a typed length far off the sketch is usually a slip: say so before it's saved
+  const sketch = drawnLen(room, wall) * job.inPerUnit;
+  const others = job.rooms.some((r) => r.walls.some((x, i) => x.lengthIn != null && !x.predicted && !(r.id === room.id && i === wall)));
+  const offBy = parsed != null && job.scaleSet && others && sketch > 18 ? (parsed > sketch * 2.2 ? 'long' : parsed < sketch / 2.2 ? 'short' : null) : null;
   const goLabel = txt ? 'Save' : verified ? 'Next' : canEstimate ? `Use ~${fmtFtIn(len)}` : 'Save';
   const toggleNoBase = () =>
     commit((j) =>
@@ -149,6 +157,10 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose, onDe
           <span className="tb-where">
             {txt && parsed == null ? (
               <span className="bad-msg">Try 12 6 or 12' 6 1/2"</span>
+            ) : offBy ? (
+              <span className="warn-msg">{offBy === 'long' ? 'Way longer' : 'Way shorter'} than the sketch. Sure?</span>
+            ) : parsed != null && parsed > 600 ? (
+              <span className="warn-msg">Over 50 feet. Sure?</span>
             ) : (
               <>
                 <span className="tb-where-t">
@@ -242,18 +254,7 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose, onDe
 }
 
 function addOpening(job: Job, room: Room, wall: number, type: OpeningType, commit: Commit) {
-  const s = job.settings;
-  const existing = job.openings.filter((o) => o.room === room.id && o.wall === wall).length;
-  const o: Opening = {
-    id: uid(),
-    room: room.id,
-    wall,
-    t: [0.5, 0.25, 0.75, 0.15, 0.85][existing % 5],
-    type,
-    widthIn: type === 'window' ? s.windowWidthIn : type === 'door' ? s.doorWidthIn : 36,
-    heightIn: type === 'window' ? s.windowHeightIn : s.doorHeightIn,
-    bothSides: type !== 'window',
-  };
+  const o = newOpening(job, room.id, wall, type);
   commit((j) => ({ ...j, openings: [...j.openings, o] }));
 }
 
