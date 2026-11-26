@@ -805,15 +805,29 @@ export default function PlanCanvas({ job, sel, setSel, tool, setTool, commit, vi
           );
         })()}
 
-      {/* room names */}
+      {/* room names; one that sits under the picked wall's grip or tag steps back */}
       {shown.rooms.filter((r) => r.closed && r.pts.length >= 3).map((r) => {
         const c = centroid(r.pts);
         const sx = c.x * k + view.x,
           sy = c.y * k + view.y;
         const areaSqft = roomAreaIn2(shown, r) / 144;
         if (Math.abs(signedArea(r.pts)) * k * k < 2500) return null;
+        let faint = false;
+        if (sel?.kind === 'wall') {
+          const sr = shown.rooms.find((q) => q.id === sel.room);
+          if (sr && sel.wall < wallCount(sr)) {
+            const [wa, wb] = wallEnds(sr, sel.wall);
+            const ax = wa.x * k + view.x, ay = wa.y * k + view.y, bx = wb.x * k + view.x, by = wb.y * k + view.y;
+            // distance from the name's box to the picked wall's middle third (grip, tag and arrow live there)
+            const near = [0.33, 0.5, 0.67].some((t) => {
+              const px = ax + (bx - ax) * t, py = ay + (by - ay) * t;
+              return Math.abs(px - sx) < 64 && py > sy - 34 && py < sy + 38;
+            });
+            faint = near;
+          }
+        }
         return (
-          <g key={'n' + r.id} transform={`translate(${sx} ${sy})`} pointerEvents="none">
+          <g key={'n' + r.id} transform={`translate(${sx} ${sy})`} pointerEvents="none" opacity={faint ? 0.18 : 1} style={{ transition: 'opacity .15s' }}>
             <text textAnchor="middle" className="rname" dy="-2">
               {r.name}
             </text>

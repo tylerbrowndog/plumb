@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, DoorOpen, AppWindow, Trash2, Ruler, Check, Scale, Delete, X, RectangleHorizontal, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, DoorOpen, AppWindow, Trash2, Ruler, Check, Scale, Delete, X, RectangleHorizontal, Plus, Ban, Ellipsis } from 'lucide-react';
 import type React from 'react';
 import type { FloorType, Job, Opening, OpeningType, Room } from './types';
 import { isVerified, uid, wallCount, wallLenIn } from './geometry';
@@ -176,24 +176,30 @@ export function WallSheet({ job, room, wall, commit, onSelectWall, onClose, onDe
 
       <TapePad onKey={key} onConfirm={confirm} confirmDisabled={txt ? parsed == null || parsed <= 0 : !verified && !canEstimate} confirmLabel={goLabel} confirm={<><Check size={17} /> {goLabel}</>} />
 
-      <div className="tb-chips" role="group" aria-label="This wall">
-        <button className="chip sm" onClick={onAddCorner}>
-          <Plus size={15} /> Corner
+      <div className="wall-acts" role="group" aria-label="This wall">
+        <button className="wact" onClick={onAddCorner}>
+          <Plus size={18} />
+          <span>Corner</span>
         </button>
-        <button className="chip sm" onClick={() => addOpening(job, room, wall, 'door', commit)}>
-          <DoorOpen size={15} /> Door
+        <button className="wact" onClick={() => addOpening(job, room, wall, 'door', commit)}>
+          <DoorOpen size={18} />
+          <span>Door</span>
         </button>
-        <button className="chip sm" onClick={() => addOpening(job, room, wall, 'window', commit)}>
-          <AppWindow size={15} /> Window
+        <button className="wact" onClick={() => addOpening(job, room, wall, 'window', commit)}>
+          <AppWindow size={18} />
+          <span>Window</span>
         </button>
-        <button className="chip sm" onClick={() => addOpening(job, room, wall, 'opening', commit)}>
-          <RectangleHorizontal size={15} /> Opening
+        <button className="wact" onClick={() => addOpening(job, room, wall, 'opening', commit)}>
+          <RectangleHorizontal size={18} />
+          <span>Opening</span>
         </button>
-        <button className={`chip sm ${w.noBase ? 'on' : ''}`} onClick={toggleNoBase} aria-pressed={!!w.noBase}>
-          {w.noBase ? <Check size={14} /> : null} No base
+        <button className={`wact ${w.noBase ? 'on' : ''}`} onClick={toggleNoBase} aria-pressed={!!w.noBase}>
+          {w.noBase ? <Check size={18} /> : <Ban size={18} />}
+          <span>No base</span>
         </button>
-        <button className={`chip sm ${more ? 'on' : ''}`} onClick={() => setMore(!more)} aria-expanded={more}>
-          More
+        <button className={`wact ${more ? 'on' : ''}`} onClick={() => setMore(!more)} aria-expanded={more}>
+          <Ellipsis size={18} />
+          <span>More</span>
         </button>
       </div>
       {onWall > 0 && !more ? <div className="tb-note">{onWall === 1 ? '1 opening' : `${onWall} openings`} on this wall. Tap one on the plan to size it.</div> : null}
@@ -487,7 +493,7 @@ export function AddRoomSheet({ defaultName, onAdd, onClose }: { defaultName: str
           </>
         }
       />
-      <div className="tb-chips" role="group" aria-label="Room name">
+      <div className="tb-chips names" role="group" aria-label="Room name">
         {ROOM_NAMES.map((nm) => (
           <button key={nm} className={`chip sm ${name === nm ? 'on' : ''}`} onClick={() => setName(name === nm ? defaultName : nm)} aria-pressed={name === nm}>
             {name === nm && <Check size={14} />} {nm}

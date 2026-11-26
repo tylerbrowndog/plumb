@@ -96,13 +96,43 @@ export default function App() {
   const mainRef = useRef<HTMLDivElement>(null);
   const [mainSize, setMainSize] = useState({ w: 390, h: 700 });
   const [view, setView] = useState<View>({ x: 60, y: 120, k: 2 });
+  // the camera glides when the app moves it (fit, follow the picked wall), like a CAD zoom; a finger always wins
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const glide = useRef({ raf: 0, last: null as View | null });
+  const glideTo = (to: View, ms = 260) => {
+    cancelAnimationFrame(glide.current.raf);
+    const from = viewRef.current;
+    const still = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (still || (Math.abs(from.k - to.k) < 1e-3 && Math.hypot(from.x - to.x, from.y - to.y) < 1)) {
+      setView(to);
+      return;
+    }
+    const t0 = performance.now();
+    glide.current.last = from;
+    const step = (now: number) => {
+      // the user grabbed the plan mid-glide: stop and leave it where they put it
+      if (viewRef.current !== glide.current.last) return;
+      const t = Math.min(1, (now - t0) / ms);
+      const e = 1 - Math.pow(1 - t, 3);
+      // zoom in log space so it feels even
+      const k = Math.exp(Math.log(from.k) + (Math.log(to.k) - Math.log(from.k)) * e);
+      // keep the point that ends at screen centre moving in a straight line
+      const v = { k, x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
+      glide.current.last = v;
+      viewRef.current = v;
+      setView(v);
+      if (t < 1) glide.current.raf = requestAnimationFrame(step);
+    };
+    glide.current.raf = requestAnimationFrame(step);
+  };
   // Sketch goes back to Select after each room, unless it is locked on (tap Sketch again)
   const [sketchLock, setSketchLock] = useState(false);
-  const [hud, setHud] = useState<{ text: string; n: number } | null>(null);
-  const showHud = (text: string) => {
-    setHud((h) => ({ text, n: (h?.n ?? 0) + 1 }));
+  const [hud, setHud] = useState<{ text: string; n: number; ms: number } | null>(null);
+  const showHud = (text: string, ms = 900) => {
+    setHud((h) => ({ text, n: (h?.n ?? 0) + 1, ms }));
     window.clearTimeout((showHud as unknown as { t?: number }).t);
-    (showHud as unknown as { t?: number }).t = window.setTimeout(() => setHud(null), 900);
+    (showHud as unknown as { t?: number }).t = window.setTimeout(() => setHud(null), ms);
   };
 
   const toast = useCallback((s: string, undoable = false) => {
@@ -268,7 +298,7 @@ export default function App() {
     ];
   };
   const fit = useCallback(
-    (j: Job = jobRef.current) => {
+    (j: Job = jobRef.current, instant = false) => {
       const b = bounds(j);
       if (!b) {
         const k = (mainSize.w * 0.55) / 144;
@@ -287,7 +317,12 @@ export default function App() {
         if (!best || k > best.k * 1.08)
           best = { k, x: a.x0 + PAD + (aw - bw * k) / 2 - b.minX * k, y: a.y0 + PAD + (ah - bh * k) / 2 - b.minY * k };
       }
-      if (best) setView(best);
+      if (best) {
+        if (instant) {
+          cancelAnimationFrame(glide.current.raf);
+          setView(best);
+        } else glideTo(best);
+      }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [mainSize],
@@ -299,7 +334,7 @@ export default function App() {
     const key = curId + ':' + mainSize.w + 'x' + mainSize.h;
     if (fitted.current === key) return;
     fitted.current = key;
-    fit();
+    fit(undefined, true);
   }, [curId, mainSize, fit, tab]);
 
   // keep the selected wall, or door or window, visible above its bar
@@ -321,25 +356,41 @@ export default function App() {
       // a picked room: lift it so it isn't hidden behind its bar
       const r = job.rooms.find((x) => x.id === sel.room);
       if (!r || !r.pts.length) return;
-      const ys = r.pts.map((q) => q.y);
+      const ys = r.pts.map((q) => q.y),
+        xs = r.pts.map((q) => q.x);
       const y0 = Math.min(...ys),
-        y1 = Math.max(...ys);
-      setView((v) => {
-        const top = 16,
-          bottom = mainSize.h - sheetH - 66;
+        y1 = Math.max(...ys),
+        x0 = Math.min(...xs),
+        x1 = Math.max(...xs);
+      const [rail] = toolRects();
+      const follow = (v: View): View => {
+        // the room and its length tags fit between the top and the undo buttons over the bar
+        const top = 12 + PAD,
+          bottom = mainSize.h - sheetH - 58 - PAD;
         const s0 = y0 * v.k + v.y,
           s1 = y1 * v.k + v.y;
-        if (s1 <= bottom) return v;
-        // bring the bottom up, but never push the top off the screen; a tall room shows its top part
-        const dy = Math.max(bottom - s1, top - s0);
-        return dy < 0 ? { ...v, y: v.y + dy } : v;
-      });
+        if (s0 >= top && s1 <= bottom) return v;
+        const roomH = (y1 - y0) * v.k;
+        if (roomH <= bottom - top) {
+          // it fits as drawn: slide it only as far as it takes
+          const dy = s1 > bottom ? bottom - s1 : top - s0;
+          return { ...v, y: v.y + dy };
+        }
+        // too tall for the space: zoom out to the room, like a CAD zoom-to-selection
+        const left = rail.r + 6 + PAD,
+          right = mainSize.w - 8 - PAD;
+        const k = Math.min(v.k, (bottom - top) / Math.max(1, y1 - y0), (right - left) / Math.max(1, x1 - x0));
+        zoomedOut.current = true;
+        return { k, x: (left + right) / 2 - ((x0 + x1) / 2) * k, y: (top + bottom) / 2 - ((y0 + y1) / 2) * k };
+      };
+      const to = follow(viewRef.current);
+      if (to !== viewRef.current) glideTo(to);
       return;
     }
     if (!m) return;
     const pt = m;
     const tools = toolRects();
-    setView((v) => {
+    const follow = (v: View): View => {
       const sx = pt.x * v.k + v.x,
         sy = pt.y * v.k + v.y;
       const top = 24,
@@ -350,7 +401,9 @@ export default function App() {
       const ty = sy > bottom ? bottom - 50 : sy < top ? top + 50 : sy;
       const tx = underTool || sx < 16 || sx > mainSize.w - 16 ? RAIL + (mainSize.w - RAIL - RIGHT) / 2 : sx;
       return { ...v, x: v.x + (tx - sx), y: v.y + (ty - sy) };
-    });
+    };
+    const to = follow(viewRef.current);
+    if (to !== viewRef.current) glideTo(to, 220);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel && sel.kind === 'wall' ? sel.room + sel.wall : sel?.kind === 'opening' ? sel.id : sel?.kind === 'room' ? 'room:' + sel.room : null]);
 
@@ -367,11 +420,18 @@ export default function App() {
     if (under || l < 0 || r > mainSize.w || t < 0 || bt > mainSize.h - 84) fit();
   };
   const hadBar = useRef(false);
+  // set when a picked room zoomed the plan out to fit over its bar; closing the bar zooms back
+  const zoomedOut = useRef(false);
   useEffect(() => {
     const open = !!sel || adding;
     const was = hadBar.current;
     hadBar.current = open;
     if (!was || open) return;
+    if (zoomedOut.current) {
+      zoomedOut.current = false;
+      fit();
+      return;
+    }
     refitIfHidden();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, adding]);
@@ -380,7 +440,20 @@ export default function App() {
   useEffect(() => {
     const was = roomCount.current;
     roomCount.current = job.rooms.length;
-    if (job.rooms.length > was && !sel && !adding) refitIfHidden(-4);
+    if (job.rooms.length > was && !sel && !adding) {
+      // a plan sketched small (a tablet, a quick doodle) zooms up so its tags are big enough to tap
+      const bb = bounds(jobRef.current);
+      const area = fitAreas()[0];
+      if (bb && tab === 'plan') {
+        const sw = (bb.maxX - bb.minX) * view.k,
+          sh = (bb.maxY - bb.minY) * view.k;
+        if (sw < (area.x1 - area.x0) * 0.42 && sh < (area.y1 - area.y0) * 0.42) {
+          fit();
+          return;
+        }
+      }
+      refitIfHidden(-4);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job.rooms.length, curId]);
 
@@ -395,9 +468,10 @@ export default function App() {
   const prevUnverified = useRef<{ id: string; n: number }>({ id: curId, n: unverified });
   useEffect(() => {
     const p = prevUnverified.current;
-    if (p.id === curId && p.n > 0 && unverified === 0 && est.totalWalls > 0) toast('Every wall is measured. Your list is exact.');
+    if (p.id === curId && p.n > 0 && unverified === 0 && est.totalWalls > 0) showHud('Every wall measured. List is exact.', 2600);
     prevUnverified.current = { id: curId, n: unverified };
-  }, [curId, unverified, est.totalWalls, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curId, unverified, est.totalWalls]);
 
   const openJob = (id: string) => {
     setCurId(id);
@@ -477,7 +551,7 @@ export default function App() {
           />
 
           {hud && (
-            <div key={hud.n} className="hud" role="status" aria-live="polite">
+            <div key={hud.n} className={`hud ${hud.ms > 900 ? 'win' : ''}`} style={{ animationDuration: `${hud.ms}ms` }} role="status" aria-live="polite">
               {hud.text}
             </div>
           )}
@@ -523,6 +597,13 @@ export default function App() {
                   <span className="strip-hint">{tool === 'draw' ? 'Draw a room with your finger. Corners snap square.' : HINTS[tool]}</span>
                   <button className="mini" onClick={() => setAdding(true)}>
                     Type a size
+                  </button>
+                </>
+              ) : tool === 'door' || tool === 'window' ? (
+                <>
+                  <span className="strip-hint">{HINTS[tool]}</span>
+                  <button className="mini on" onClick={() => setTool('select')}>
+                    Done
                   </button>
                 </>
               ) : (

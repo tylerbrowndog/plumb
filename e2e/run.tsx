@@ -10,6 +10,8 @@ g.HTMLElement = dom.window.HTMLElement;
 g.Element = dom.window.Element;
 g.Node = dom.window.Node;
 g.IS_REACT_ACT_ENVIRONMENT = true;
+g.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
+g.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
 g.ResizeObserver = class {
   cb: any;
   constructor(cb: any) {
@@ -95,7 +97,7 @@ await click(go(), 'use est');
 log('next wall:', $('.tb-where')?.textContent, $('.tb-len')?.textContent);
 for (const k of ['1', '5', '0']) await click(key(k), k);
 log('typed 150:', $('.tb-len')?.textContent);
-await click($$('.tapebar .chip').find((b) => b.textContent?.includes('Door')), 'door chip');
+await click($$('.tapebar .wact').find((b) => b.textContent?.includes('Door')), 'door chip');
 log('note:', $('.tb-note')?.textContent);
 await click(go(), 'save2');
 log('labels now:', $$('text.lbl').map((t) => t.textContent).join(' | '));

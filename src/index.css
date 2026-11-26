@@ -2409,3 +2409,98 @@ body {
   font-size: 13.5px;
   line-height: 1.45;
 }
+
+/* a wall's actions: one row of six, every one visible, icon over word */
+.wall-acts {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+}
+.wact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 50px;
+  padding: 4px 0 3px;
+  border-radius: 12px;
+  border: 1px solid rgba(238, 241, 232, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--case-text);
+  font: 600 11.5px/1.1 var(--text);
+  letter-spacing: -0.01em;
+}
+.wact span {
+  white-space: nowrap;
+}
+.wact:active {
+  background: var(--case-2);
+  transform: translateY(1px);
+}
+.wact.on {
+  background: rgba(255, 194, 14, 0.14);
+  border-color: var(--tape);
+  color: var(--tape);
+}
+/* room names: all six in view, no hidden scroll */
+.tb-chips.names {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+  padding-right: 0;
+  -webkit-mask-image: none;
+  mask-image: none;
+  overflow: visible;
+}
+.tb-chips.names .chip.sm {
+  padding: 0 2px;
+  font-size: 13px;
+  justify-content: center;
+  gap: 2px;
+}
+.tb-chips.names .chip.sm svg {
+  display: none;
+}
+@media (max-width: 379px) {
+  .wact {
+    font-size: 10.5px;
+  }
+  .tb-chips.names {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* the moment the last wall is measured */
+.hud.win {
+  background: var(--tape);
+  color: #1a1600;
+}
+
+/* the HUD sits in the open space right of the tool rail */
+.hud {
+  left: calc(50% + 30px);
+  max-width: calc(100% - 84px);
+  white-space: normal;
+  text-align: center;
+}
+.hud {
+  left: 66px;
+  right: 8px;
+  margin: 0 auto;
+  width: fit-content;
+  max-width: none;
+  transform: none;
+  animation-name: hud-in2;
+}
+@keyframes hud-in2 {
+  0% { opacity: 0; transform: translateY(-6px) scale(0.96); }
+  14% { opacity: 1; transform: none; }
+  72% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud {
+    animation: none;
+  }
+}
